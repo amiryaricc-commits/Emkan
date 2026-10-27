@@ -1,0 +1,1572 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نقشه معماری و جریان مالی سیستم امکان و فراپی (FaraPay & Emkan Architecture Graph)</title>
+  
+  <!-- Fonts -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
+  
+  <!-- CDNs for 3D & 2D Force Directed Graph -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/force-graph@1.43.5/dist/force-graph.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #07090E;
+      --card-bg: rgba(15, 23, 42, 0.78);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --gold: #D4AF37;
+      --emerald: #10B981;
+      --cyan: #0EA5E9;
+      --purple: #8B5CF6;
+      --rose: #F43F5E;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #graph-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Glassmorphism Classes */
+    .glass-panel {
+      background: var(--card-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+    }
+
+    /* Top HUD Header */
+    .top-hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      z-index: 20;
+      padding: 10px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      color: #07090E;
+      font-size: 18px;
+      box-shadow: 0 0 20px rgba(212, 175, 55, 0.4);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: #FFFFFF;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-group {
+      display: flex;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 3px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .hud-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hud-btn:hover {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .hud-btn.active {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.16);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .hud-btn.active-gold {
+      background: linear-gradient(135deg, rgba(212, 175, 55, 0.3), rgba(245, 158, 11, 0.2));
+      color: #FDE68A;
+      border: 1px solid rgba(212, 175, 55, 0.4);
+    }
+
+    /* Search Box */
+    .search-box-wrapper {
+      position: relative;
+      min-width: 220px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      padding: 7px 32px 7px 12px;
+      color: #FFFFFF;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 12px rgba(14, 165, 233, 0.35);
+      background: rgba(0, 0, 0, 0.7);
+    }
+
+    .search-icon {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      font-size: 13px;
+    }
+
+    .search-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      left: 0;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      max-height: 260px;
+      overflow-y: auto;
+      z-index: 100;
+      display: none;
+      padding: 4px;
+    }
+
+    .search-item {
+      padding: 8px 12px;
+      font-size: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background 0.15s;
+    }
+
+    .search-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Floating Stats Pill */
+    .stats-pill {
+      position: absolute;
+      top: 86px;
+      left: 16px;
+      z-index: 10;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+    }
+
+    .stat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-muted);
+    }
+
+    .stat-badge b {
+      color: #FFFFFF;
+      font-family: monospace;
+      font-size: 12px;
+    }
+
+    /* Bottom Legend */
+    .bottom-legend {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      max-width: 90vw;
+      overflow-x: auto;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .legend-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    /* Right Sliding Inspector Sidebar */
+    .inspector-panel {
+      position: absolute;
+      top: 80px;
+      right: 16px;
+      bottom: 20px;
+      width: 380px;
+      max-width: calc(100vw - 32px);
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(calc(100% + 24px));
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .inspector-panel.open {
+      transform: translateX(0);
+    }
+
+    .inspector-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .inspector-title-area {
+      flex: 1;
+    }
+
+    .inspector-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .inspector-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #FFFFFF;
+      line-height: 1.4;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+      color: #FFFFFF;
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    .inspector-content {
+      padding: 16px 20px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .info-card {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .info-card-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .info-card-text {
+      font-size: 12px;
+      line-height: 1.7;
+      color: #E2E8F0;
+    }
+
+    .code-pill {
+      font-family: monospace;
+      font-size: 11px;
+      color: #A78BFA;
+      direction: ltr;
+      text-align: left;
+      background: rgba(139, 92, 246, 0.12);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    .formula-pill {
+      font-family: monospace;
+      font-size: 11px;
+      color: #FDE047;
+      direction: ltr;
+      text-align: left;
+      background: rgba(234, 179, 8, 0.1);
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(234, 179, 8, 0.25);
+      display: block;
+      margin-top: 6px;
+      word-break: break-all;
+    }
+
+    .tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .tag-btn {
+      font-size: 10.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.05);
+      color: #E2E8F0;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .tag-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #FFFFFF;
+      transform: translateY(-1px);
+    }
+
+    /* Helper instruction overlay on start */
+    .instruction-tooltip {
+      position: absolute;
+      bottom: 74px;
+      left: 16px;
+      z-index: 10;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+      pointer-events: none;
+      animation: fadeInOut 6s forwards;
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(8px); }
+      15% { opacity: 1; transform: translateY(0); }
+      80% { opacity: 1; }
+      100% { opacity: 0; pointer-events: none; }
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- WebGL Canvas Container -->
+  <div id="graph-container"></div>
+
+  <!-- Top HUD Header -->
+  <header class="top-hud glass-panel">
+    <div class="brand-section">
+      <div class="brand-logo">FP</div>
+      <div>
+        <div class="brand-title">گراف تعاملی معماری و جریان مالی (FaraPay / Emkan)</div>
+        <div class="brand-subtitle">نقشه ۲ بعدی و ۳ بعدی موتور حسابداری، انبارداری و صندوق فروش</div>
+      </div>
+    </div>
+
+    <!-- View Mode Switcher -->
+    <div class="btn-group">
+      <button id="view-full-btn" class="hud-btn active" onclick="switchView('full')">
+        <span>🌐 کهکشان کامل</span>
+      </button>
+      <button id="view-financial-btn" class="hud-btn" onclick="switchView('financial')">
+        <span>💰 جریان مالی و حسابداری</span>
+      </button>
+      <button id="view-arch-btn" class="hud-btn" onclick="switchView('architecture')">
+        <span>🏗️ معماری سیستم و ماژول‌ها</span>
+      </button>
+    </div>
+
+    <!-- 2D / 3D Dimension Switcher -->
+    <div class="btn-group">
+      <button id="dim-3d-btn" class="hud-btn active active-gold" onclick="setDimension('3D')">
+        <span>🌌 نمای فضایی 3D</span>
+      </button>
+      <button id="dim-2d-btn" class="hud-btn" onclick="setDimension('2D')">
+        <span>📐 نمای مسطح 2D</span>
+      </button>
+    </div>
+
+    <!-- Search Box -->
+    <div class="search-box-wrapper">
+      <input 
+        type="text" 
+        id="search-input" 
+        class="search-input" 
+        placeholder="جستجوی بخش (مثلاً: سود، کاردکس)..."
+        oninput="handleSearch(this.value)"
+        onfocus="handleSearch(this.value)"
+      >
+      <span class="search-icon">🔍</span>
+      <div id="search-dropdown" class="search-dropdown"></div>
+    </div>
+
+    <!-- Action Tools -->
+    <div class="nav-controls">
+      <button class="hud-btn glass-panel" title="ریست دوربین" onclick="resetCamera()">
+        <span>🔄 ریست نما</span>
+      </button>
+      <button id="freeze-btn" class="hud-btn glass-panel" title="توقف / حرکت فیزیک" onclick="togglePhysics()">
+        <span>⏸️ فیزیک</span>
+      </button>
+      <button id="particles-btn" class="hud-btn glass-panel" title="روشن / خاموش جریان ذرات" onclick="toggleParticles()">
+        <span>✨ ذرات پویا</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Floating Stats Pill -->
+  <div class="stats-pill glass-panel">
+    <div class="stat-badge">گره‌ها: <b id="stat-nodes-count">۳۲</b></div>
+    <div class="stat-badge">ارتباطات: <b id="stat-links-count">۴۴</b></div>
+    <div class="stat-badge">موتور: <b id="stat-dim-label">WebGL 3D</b></div>
+    <div class="stat-badge">سیستم: <b style="color: var(--emerald);">پایدار و متوازن</b></div>
+  </div>
+
+  <!-- Instruction Tooltip -->
+  <div class="instruction-tooltip glass-panel">
+    💡 با کلیک و درگ دوربین را بچرخانید، با اسکرول زوم کنید و روی هر گره کلیک کنید تا پنل جزئیات باز شود.
+  </div>
+
+  <!-- Bottom Legend -->
+  <footer class="bottom-legend glass-panel">
+    <div class="legend-item" onclick="filterByCategory('accounting')" title="فیلتر بخش‌های حسابداری">
+      <span class="legend-dot" style="background: var(--gold); color: var(--gold);"></span>
+      <span>هسته حسابداری و دفاتر (۷)</span>
+    </div>
+    <div class="legend-item" onclick="filterByCategory('inventory')" title="فیلتر انبار و کالاها">
+      <span class="legend-dot" style="background: var(--emerald); color: var(--emerald);"></span>
+      <span>انبار، کالا و کاردکس (۷)</span>
+    </div>
+    <div class="legend-item" onclick="filterByCategory('pos')" title="فیلتر فروش و صندوق">
+      <span class="legend-dot" style="background: var(--cyan); color: var(--cyan);"></span>
+      <span>صندوق فروش و CRM (۶)</span>
+    </div>
+    <div class="legend-item" onclick="filterByCategory('architecture')" title="فیلتر سورس‌کد و دیتابیس">
+      <span class="legend-dot" style="background: var(--purple); color: var(--purple);"></span>
+      <span>سورس‌کد و دیتابیس (۷)</span>
+    </div>
+    <div class="legend-item" onclick="filterByCategory('control')" title="فیلتر هزینه‌ها و نقاط کنترلی">
+      <span class="legend-dot" style="background: var(--rose); color: var(--rose);"></span>
+      <span>هزینه‌ها، بدهی و خسارت (۵)</span>
+    </div>
+  </footer>
+
+  <!-- Right Sliding Inspector Sidebar -->
+  <aside id="inspector-panel" class="inspector-panel glass-panel">
+    <div class="inspector-header">
+      <div class="inspector-title-area">
+        <span id="inspector-badge" class="inspector-badge">هسته حسابداری</span>
+        <h2 id="inspector-title" class="inspector-title">دفتر کل و اسناد دوبل</h2>
+      </div>
+      <button class="close-btn" onclick="closeInspector()" title="بستن پنل">✕</button>
+    </div>
+
+    <div class="inspector-content">
+      <!-- Role & Purpose -->
+      <div class="info-card">
+        <div class="info-card-label">🎯 نقش و رسالت در سیستم</div>
+        <div id="inspector-role" class="info-card-text">
+          مخزن مرکزی ثبت تمام رویدادهای مالی و اسناد دوبل؛ تضمین توازن دوطرفه بدهکار و بستانکار در کلیه تراکنش‌های فروش، خرید، استهلاک و برداشت.
+        </div>
+      </div>
+
+      <!-- Source File & Code Location -->
+      <div class="info-card">
+        <div class="info-card-label">📂 فایل و خطوط سورس‌کد پروژه</div>
+        <div id="inspector-file" class="code-pill">src/utils/erpEngine.ts:250-410</div>
+      </div>
+
+      <!-- Inputs & Outputs -->
+      <div class="info-card">
+        <div class="info-card-label">📥 ورودی‌های داده (Inputs)</div>
+        <div id="inspector-inputs" class="info-card-text">فاکتورهای فروش، فاکتورهای خرید بار، اسناد دستی JV</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-card-label">📤 خروجی‌ها و بخش‌های متأثر (Outputs)</div>
+        <div id="inspector-outputs" class="info-card-text">تراز آزمایشی ۶ ستونی، صورت‌های مالی، مانده حساب‌های کدینگ</div>
+      </div>
+
+      <!-- Formula & Business Logic -->
+      <div class="info-card">
+        <div class="info-card-label">📐 فرمول محاسباتی و منطق کلیدی</div>
+        <div id="inspector-formula" class="formula-pill">Σ بدهکار (Debit) === Σ بستانکار (Credit)</div>
+      </div>
+
+      <!-- Direct Connected Nodes -->
+      <div class="info-card">
+        <div class="info-card-label">🔗 گره‌های متصل مستقیم (کلیک برای پرش)</div>
+        <div id="inspector-connected" class="tags-container"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Complete Graph Data Specification -->
+  <script>
+    const RAW_GRAPH_DATA = {
+      nodes: [
+        // 🟡 دسته ۱: هسته حسابداری و مالی
+        {
+          id: 'node_coa',
+          name: 'درخت کدینگ حساب‌ها (Chart of Accounts)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 18,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'کدینگ جامع ۴ و ۶ رقمی',
+          role: 'ساختار پایه‌ای استاندارد حسابداری در ۵ گروه اصلی (دارایی‌ها ۱۰۰۰، بدهی‌ها ۲۰۰۰، سرمایه ۳۰۰۰، درآمدها ۴۰۰۰، هزینه‌ها ۵۰۰۰) با سطوح کل، معین و تفصیلی.',
+          file: 'src/data/initialAccounts.ts & src/components/AccountingModule.tsx:195',
+          inputs: 'تعریف سرفصل‌های معین و تفصیلی جدید، افزودن حساب در فرم‌های خرید/فروش، ایمپورت از حسابفا.',
+          outputs: 'تغذیه دفتر کل، تراز آزمایشی، ترازنامه، صورت سود و زیان و گردش نقدینگی.',
+          formula: 'دارایی‌ها (۱۰۰۰) = بدهی‌ها (۲۰۰۰) + سرمایه شرکا (۳۰۰۰)'
+        },
+        {
+          id: 'node_gl',
+          name: 'دفتر کل و اسناد دوبل (General Ledger)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 22,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'مخزن اسناد مالی متوازن',
+          role: 'مخزن اصلی تمام آرتیکل‌های مالی ثبت‌شده؛ تضمین توازن دوطرفه حسابداری و نگهداری ریز اسناد با کد پیگیری یکتا (VoucherNo).',
+          file: 'src/utils/erpEngine.ts:250 & src/App.tsx:320',
+          inputs: 'فاکتورهای فروش POS، فاکتورهای خرید بار، اسناد دستی JV، آورده/برداشت سود شرکا، هزینه‌های ثابت و ابطال فاکتور.',
+          outputs: 'محاسبه مانده لحظه‌ای حساب‌ها، تراز آزمایشی ۶ ستونی و استخراج صورت سود و زیان.',
+          formula: 'Σ بدهکار (Debit) === Σ بستانکار (Credit)'
+        },
+        {
+          id: 'node_trial_balance',
+          name: 'تراز آزمایشی ۶ ستونی (Trial Balance)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'کنترل صحت دفاتر و تجمیع',
+          role: 'تأییدیه سلامت و انضباط مالی با نمایش ۶ ستون (گردش ابتدای دوره، گردش طی دوره بدهکار/بستانکار، مانده نهایی بدهکار/بستانکار) در ۳ سطح گروه، کل و معین.',
+          file: 'src/utils/erpEngine.ts:computeTrialBalance6Col',
+          inputs: 'تمام سطرهای دفتر کل (gl_entries) و ساختار سلسله مراتبی درخت حساب‌ها.',
+          outputs: 'کشف مغایرت‌های مالی، کنترل خطاهای بستن حساب و ایجاد زیربنای مطمئن برای ممیزی.',
+          formula: 'جمع گردش بدهکار کل === جمع گردش بستانکار کل | جمع مانده نهایی بدهکار === جمع مانده نهایی بستانکار'
+        },
+        {
+          id: 'node_financial_statements',
+          name: 'صورت‌های مالی (P&L و ترازنامه)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 19,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'سود و زیان و ترازنامه',
+          role: 'محاسبه سود ناخالص، سود خالص دوره مالی و ترسیم ساختار دارایی‌ها در برابر تعهدات و بدهی‌های فروشگاه.',
+          file: 'src/utils/erpEngine.ts:calculateFinancialStatements',
+          inputs: 'مانده حساب‌های درآمد (۴۰۰۰)، بهای تمام شده (۵۱۰۱)، هزینه‌های جاری (۵۲۰۰) و دارایی/بدهی.',
+          outputs: 'تغذیه رقم سود خالص به موتور تسهیم سود ۳ سطلی شرکا و تحلیل‌های BI.',
+          formula: 'سود ناخالص = درآمد فروش - بهای تمام شده (COGS) | سود خالص = سود ناخالص - مجموع هزینه‌های جاری'
+        },
+        {
+          id: 'node_shareholders_equity',
+          name: 'قاعده ۳ سطلی حقوق شرکا (3-Bucket Equity)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 20,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'تسهیم ۵۰/۵۰ سرمایه و ۷۰/۳۰ سود',
+          role: 'مدیریت حرفه‌ای حقوق صاحبان سهام و سهم سود: تفکیک بازگشت ۵۰/۵۰ اصل سرمایه خرید کالا از توزیع ۷۰/۳۰ سود خالص عملیاتی.',
+          file: 'src/utils/erpEngine.ts:calculateThreeBucketShareholderState',
+          inputs: 'سود خالص دوره، آورده نقدی شرکا، فاکتورهای خرید سرمایه‌ای و اسناد برداشت سود.',
+          outputs: 'کیف پول شرکا، هشدار کسری شریک ۳۰٪ در خریدهای توسعه‌ای و تسویه شفاف پایان ماه.',
+          formula: 'سطل ۱: استرداد سرمایه ۵۰/۵۰ | سطل ۲: تقسیم سود ۷۰/۳۰ | سطل ۳: مانده قابل برداشت کیف پول'
+        },
+        {
+          id: 'node_journal_voucher',
+          name: 'سند دوبل دستی (Journal Voucher)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 14,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'اسناد تعدیل و استهلاک',
+          role: 'ابزار ثبت اسناد حسابداری خاص توسط مدیر مالی شامل ثبت استهلاک دارایی، مالیات، اصلاح حساب و سند افتتاحیه.',
+          file: 'src/components/AccountingModule.tsx:1840-2050',
+          inputs: 'سرفصل‌های حسابداری، مبالغ بدهکار و بستانکار، تاریخ شمسی و شرح سند.',
+          outputs: 'افزودن مستقیم به آرایه اسناد دفتر کل با شماره سریال JV-1404-XXXX.',
+          formula: 'Σ آرتیکل‌های بدهکار === Σ آرتیکل‌های بستانکار (قفل فرم تا زمان توازن)'
+        },
+        {
+          id: 'node_tax_vat',
+          name: 'حساب ارزش افزوده و مالیات (کد ۲۱۰۳)',
+          category: 'accounting',
+          color: '#D4AF37',
+          val: 13,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'تعهدات مالیاتی قانونی',
+          role: 'نگهداری مالیات بر ارزش افزوده وصول‌شده در فروش و تفکیک شفاف آن از درآمد عملیاتی فروشگاه.',
+          file: 'src/utils/erpEngine.ts:buildSalesInvoiceLedgerLines',
+          inputs: 'نرخ مالیات تعیین‌شده در فاکتورهای فروش رسمی.',
+          outputs: 'ثبت در سرفصل بدهی جاری مالیات (۲۱۰۳) و گزارش فصلی ارزش افزوده.',
+          formula: 'مبلغ کل فاکتور = مبلغ خالص کالا + مالیات بر ارزش افزوده (بدهی به دارایی)'
+        },
+
+        // 🟢 دسته ۲: انبارداری، کالاها و کاردکس
+        {
+          id: 'node_inventory_master',
+          name: 'کاتالوگ جامع کالاها (Inventory Master)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 20,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'کاتالوگ و بهای تمام شده MWA',
+          role: 'پایگاه داده اصلی کالاها شامل SKU، نام محصول، طعم، بارکد، دسته‌بندی، نرخ فروش و نرخ ارزش‌گذاری میانگین موزون (MWA).',
+          file: 'src/data/cloudyShopInventory.ts & src/types/erp.ts',
+          inputs: 'پذیرش از فاکتور خرید، تفکیک بار، ایمپورت اکسل حسابفا یا تعریف دستی کالا.',
+          outputs: 'تغذیه سبد صندوق POS، محاسبه بهای تمام شده (COGS) و مانده ارزش ریالی انبار.',
+          formula: 'ارزش کل انبار = Σ (موجودی هر کالا × نرخ بهای تمام شده میانگین موزون)'
+        },
+        {
+          id: 'node_warehouse_multi',
+          name: 'انبارداری چندگانه (Multi-Warehouse)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'تفکیک ۴ انبار مستقل',
+          role: 'تفکیک فیزیکی موجودی بین ۴ انبار: مرکزی/خارجی، ویترین فروشگاه، کالای در راه و انبار ضایعات.',
+          file: 'src/components/InventoryWmsModule.tsx:170-240',
+          inputs: 'رسید فاکتور خرید بار، حواله‌های انتقال بین انبارها و تفکیک ضایعات.',
+          outputs: 'موجودی قابل فروش در ویترین POS، جلوگیری از کسری موجودی و ردیابی بار در راه.',
+          formula: 'موجودی کل کالا = موجودی انبار مرکزی + انبار ویترین + انبار در راه + انبار ضایعات'
+        },
+        {
+          id: 'node_stock_cardex',
+          name: 'کاردکس انبار و ردیابی ورود/خروج (Stock Ledger)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 21,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'کاردکس مقداری-ریالی',
+          role: 'دفتر کل مقداری-ریالی انبارداری؛ ثبت قطعی هرگونه ورود (خرید، مرجوعی، تعدیل) و خروج (فروش، مصرف فنی، ضایعات، سرقت).',
+          file: 'src/components/InventoryWmsModule.tsx & src/types/erp.ts',
+          inputs: 'تراکنش‌های فروش، فاکتور خرید بار، خدمات فنی، حواله‌های انتقال و ابطال فاکتور.',
+          outputs: 'گزارش کاردکس لحظه‌ای، مانده مقداری کالاها و تضمین عدم منفی شدن موجودی.',
+          formula: 'مانده پس از تراکنش = مانده قبلی + مقدار ورود - مقدار خروج'
+        },
+        {
+          id: 'node_sku_breakdown',
+          name: 'تفکیک کالا و کدگذاری فنی (SKU Breakdown)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'تفکیک ۱۱ ویژگی تخصصی',
+          role: 'فرآیند تفکیک فاکتور کلان بار به SKUهای مشخص با ثبت ۱۱ ویژگی تخصصی (طعم، رنگ، اهم کویل، حجم میلی‌لیتر و...).',
+          file: 'src/components/InventoryWmsModule.tsx:193-210',
+          inputs: 'فاکتور خرید بار مرحله اول (با وضعیت رسیده به انبار).',
+          outputs: 'ایجاد یا افزایش موجودی اقلام تفکیک‌شده و فعال‌سازی قابلیت اسکن بارکد در صندوق.',
+          formula: 'تعداد کل فاکتور خرید مادر === Σ تعداد تک‌تک SKUهای تفکیک‌شده (هشدار مغایرت)'
+        },
+        {
+          id: 'node_bundles_promotions',
+          name: 'جشنواره‌ها و باندل ترکیبی کالاها (Bundles)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 16,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'کسر پویای اجزای باندل',
+          role: 'تعریف بسته‌های تخفیفی چند کالا و قواعد جشنواره فروش؛ کسر پویای قطعات فیزیکی از موجودی هنگام فروش باندل.',
+          file: 'src/utils/erpEngine.ts:deductStockWithBundles',
+          inputs: 'قواعد تخفیف درصدی/مبلغی، ترکیب کالاها در باندل و بازه زمانی جشنواره.',
+          outputs: 'اعمال تخفیف هوشمند در صندوق و ثبت بهای تمام شده دقیق بر اساس ارزش واقعی قطعات.',
+          formula: 'بهای تمام شده باندل = Σ (بهای تمام شده جزء ۱ × تعداد) + (بهای تمام شده جزء ۲ × تعداد)'
+        },
+        {
+          id: 'node_decant_station',
+          name: 'فروش میلی‌لیتری مایعات و دکانت (Decant Station)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 16,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'دکانت میلی‌لیتری دقیق',
+          role: 'فروش سالت و جویس به صورت میلی‌لیتری؛ فک پلمپ شیشه کامل و نگهداری مانده باز بدون نشت ریالی.',
+          file: 'src/utils/erpEngine.ts:deductDecantMlFromBottle',
+          inputs: 'انتخاب میلی‌لیتر در سبد صندوق POS (با گام ۱ میلی‌لیتری).',
+          outputs: 'کسر حجم مصرفی از بطری باز، باز کردن شیشه پلمپ در صورت نیاز و ثبت بهای تمام شده هر سی‌سی.',
+          formula: 'بهای تمام شده ۱ میلی‌لیتر = نرخ شیشه پلمپ ÷ حجم کل بطری (مثلاً ۶۰ میلی‌لیتر)'
+        },
+        {
+          id: 'node_inter_warehouse_transfer',
+          name: 'حواله انتقال بین انبارها (Stock Transfer)',
+          category: 'inventory',
+          color: '#10B981',
+          val: 15,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'حواله کنترل موجودی',
+          role: 'انتقال کنترل‌شده اقلام از انبار مرکزی یا در راه به انبار ویترین، با ثبت هویت انتقال‌دهنده و اصلاح همزمان کاردکس دو انبار.',
+          file: 'src/App.tsx:handleTransferStock',
+          inputs: 'انبار مبدأ، انبار مقصد، کالا و تعداد قابل انتقال.',
+          outputs: 'کاهش موجودی مبدأ، افزایش موجودی مقصد و ثبت ردیف جابجایی در کاردکس.',
+          formula: 'موجودی مبدأ -= تعداد | موجودی مقصد += تعداد (ارزش کل سرمایه انبار بدون تغییر)'
+        },
+
+        // 🔵 دسته ۳: فروش، صندوق و ارتباط با مشتریان
+        {
+          id: 'node_pos_terminal',
+          name: 'صندوق فروشگاهی هوشمند (POS Terminal)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 22,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'صندوق فروشگاهی سریع',
+          role: 'رابط کاربری صدور آنی فاکتور فروش؛ جستجوی بارکدی کالا، انتخاب مشتری، اعمال تخفیف‌های ویژه و چاپ فیش حرارتی.',
+          file: 'src/components/SellingPosModule.tsx:170-750',
+          inputs: 'بارکدخوان، جستجوی هوشمند، کلیک سریع اقلام، خدمات فنی و سلیقه مصرف مشتری.',
+          outputs: 'صدور فاکتور فروش، فرمان کسر انبار، صدور اسناد دفتر کل و بروزرسانی امتیاز باشگاه مشتریان.',
+          formula: 'مبلغ نهایی فاکتور = اقلام فاکتور + خدمات فنی - تخفیف جشنواره - تخفیف دستی'
+        },
+        {
+          id: 'node_sales_invoices',
+          name: 'فاکتورهای فروش (Sales Invoices)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 20,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'فاکتور فروش رسمی',
+          role: 'سند رسمی معامله فروش با جزئیات کامل اقلام، روش‌های پرداخت (کارتخوان، کارت‌به‌کارت، نقد، نسیه) و وضعیت تسویه.',
+          file: 'src/types/erp.ts & src/App.tsx:620-720',
+          inputs: 'تکمیل سبد در صندوق POS توسط صندوقدار.',
+          outputs: 'آرشیو فاکتورها، ایجاد اسناد دفتر کل (بانک، صندوق، دریافتنی، درآمد و COGS).',
+          formula: 'مبلغ کل فاکتور = نقد پرداخت‌شده + مانده بدهی نسیه مشتری'
+        },
+        {
+          id: 'node_pos_returns',
+          name: 'مرجوعی فروش و تعویض کالا (Sales Returns)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: '۳ مسیر تسویه مرجوعی',
+          role: 'رسیدگی به کالای مرجوعی مشتری با ۳ مسیر عملیاتی: بستانکار کردن حساب، تعویض فوری با کالای دیگر، یا عودت وجه.',
+          file: 'src/components/PosReturnsPanel.tsx:20-210',
+          inputs: 'شماره فاکتور مرجع، کالای مرجوعی، روش تسویه و کارمزد احتمالی بازگشت به انبار.',
+          outputs: 'برگشت تعداد به انبار ویترین، کاهش درآمد و ثبت سند حسابداری معکوس.',
+          formula: 'سند معکوس فروش: بدهکار شدن درآمد/بستانکاری مشتری و بستانکار شدن بانک/صندوق'
+        },
+        {
+          id: 'node_crm_contacts',
+          name: 'باشگاه مشتریان و مخاطبان (CRM Contacts)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 18,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'پروفایل ۳۶۰ درجه مشتری',
+          role: 'پروفایل ۳۶۰ درجه مخاطبان: دسته‌بندی مشتریان، ریسلرها و تامین‌کنندگان، تاریخچه سفارشات، مانده حساب و تحلیل CLV.',
+          file: 'src/components/CrmMarketingModule.tsx:70-260',
+          inputs: 'ثبت سریع مشتری در صندوق، افزودن در شیت CRM و ایمپورت اکسل اشخاص.',
+          outputs: 'شناسایی مشتریان وفادار، اعمال نرخ قیمت همکار (ریسلر) و پیگیری مطالبات نسیه.',
+          formula: 'ارزش طول عمر مشتری (CLV) = مجموع تمام خریدهای موفق مشتری در سیستم'
+        },
+        {
+          id: 'node_marketing_leads',
+          name: 'لیدهای تبلیغاتی و پیامک انبوه (Leads & SMS)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 15,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'استخر پیامک و لید',
+          role: 'مدیریت سرنخ‌های فروش حاصل از کمپین‌های اینستاگرام، تلگرام و استخر شماره‌های پیامک تبلیغاتی.',
+          file: 'src/components/CrmMarketingModule.tsx:85-105',
+          inputs: 'ایمپورت فایل متنی/اکسل شماره‌ها، ثبت لید در شیت بازاریابی.',
+          outputs: 'ارسال هدفمند پیامک‌های تخفیف و جشنواره، ارزیابی نرخ تبدیل لید به مشتری نهایی.',
+          formula: 'نرخ تبدیل لید = (تعداد خریداران نهایی ÷ کل لیدهای جذب‌شده) × ۱۰۰'
+        },
+        {
+          id: 'node_technical_services',
+          name: 'خدمات فنی و تعویض کویل/پنبه (Technical Services)',
+          category: 'pos',
+          color: '#0EA5E9',
+          val: 15,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'درآمد خدمات و مصرف قطعه',
+          role: 'ثبت خدمات تعویض کویل، پنبه‌گذاری (Wicking) و سرویس دستگاه همراه با مصرف قطعه از ویترین مغازه.',
+          file: 'src/components/SellingPosModule.tsx:231-237',
+          inputs: 'عنوان خدمت فنی، دستمزد سرویس، و انتخاب کالای مصرفی از انبار ویترین.',
+          outputs: 'کسر قطعه مصرفی از کاردکس انبار و ثبت درآمد خدمات در فاکتور فروش.',
+          formula: 'فاکتور خدمات = اجرت دستمزد + بهای قطعه مصرفی انبار'
+        },
+
+        // 🔴 دسته ۴: هزینه‌ها، کنترل و دزدی
+        {
+          id: 'node_cogs_cost',
+          name: 'بهای تمام شده کالای فروش‌رفته (COGS - ۵۱۰۱)',
+          category: 'control',
+          color: '#F43F5E',
+          val: 18,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'هزینه استهلاک انبار',
+          role: 'مهم‌ترین سرفصل هزینه عملیاتی؛ استهلاک ارزش واقعی خرید کالاهای فروخته‌شده و کاهش معادل آن از موجودی انبار.',
+          file: 'src/utils/erpEngine.ts:260-300',
+          inputs: 'تعداد کالای فروخته‌شده × نرخ ارزش‌گذاری میانگین موزون لحظه‌ای (MWA).',
+          outputs: 'بدهکار شدن سرفصل ۵۱۰۱ و بستانکار شدن سرفصل ۱۱۰۴ در دفتر کل.',
+          formula: 'سند دوبل: بدهکار: ۵۱۰۱ (بهای تمام شده) | بستانکار: ۱۱۰۴ (موجودی کالا)'
+        },
+        {
+          id: 'node_recurring_expenses',
+          name: 'هزینه‌های ثابت و دوره‌ای ماهانه (Fixed Expenses)',
+          category: 'control',
+          color: '#F43F5E',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'قفل ماهانه هزینه‌ها',
+          role: 'پایش و ثبت منظم هزینه‌های جاری: اجاره فروشگاه، شارژ پاساژ، حقوق پرسنل، قبوض و ملزومات پذیرایی.',
+          file: 'src/components/OperationalCalendarModule.tsx & src/components/AccountingModule.tsx:2415',
+          inputs: 'قالب‌های هزینه‌ای تعریف‌شده و ثبت پرداختی‌های قطعی هر ماه شمسی.',
+          outputs: 'قفل شدن هزینه هر ماه، ثبت سند پرداخت در دفتر کل و کسر از نقدینگی بانک/صندوق.',
+          formula: 'سند دوبل: بدهکار: ۵۲۰۱-۵۲۰۴ (هزینه‌های جاری) | بستانکار: ۱۱۰۱۰۲/۱۱۰۱۰۳ (بانک/صندوق)'
+        },
+        {
+          id: 'node_purchase_invoices',
+          name: 'فاکتورهای خرید بار (Stage-1 Purchase Bills)',
+          category: 'control',
+          color: '#F43F5E',
+          val: 19,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'فاکتور خرید بار',
+          role: 'ثبت خرید کلان کالا از بازرگانی‌ها و تأمین‌کنندگان، تفکیک بار در راه و ثبت بدهی به تأمین‌کننده.',
+          file: 'src/components/SellingPosModule.tsx:735-820',
+          inputs: 'نام تأمین‌کننده، ردیف‌های کالا، هزینه حمل (Landed Cost)، وضعیت رسیدن بار و حساب پرداخت.',
+          outputs: 'افزایش موجودی در راه، ثبت سند بدهکاری به تأمین‌کننده (۲۱۰۱) و ارسال به صف تفکیک SKU.',
+          formula: 'سند دوبل: بدهکار: ۱۱۰۵ (انبار در راه) | بستانکار: ۲۱۰۱ (حساب‌های پرداختنی) / بانک'
+        },
+        {
+          id: 'node_theft_fraud',
+          name: 'ثبت دزدی و رسیدهای فیک (Theft & Fraud Incidents)',
+          category: 'control',
+          color: '#F43F5E',
+          val: 17,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'ممیزی خسارت و دزدی',
+          role: 'مهندسی اصولی ثبت وقایع سرقت فیزیکی، رسید فیک بانکی و فریب صندوقدار با ثبت مدارک پلیس، رفرنس CCTV و تفکیک خسارت.',
+          file: 'src/components/InventoryWmsModule.tsx:240-260 & src/App.tsx:940',
+          inputs: 'نوع حادثه (سرقت، رسید فیک، کسری انبار)، شماره صورتجلسه کلانتری، تصویر مظنون و کالاها.',
+          outputs: 'کسر اقلام مفقوده از کاردکس انبار و ثبت سند زیان غیرمترقبه در دفاتر مالی.',
+          formula: 'سند دوبل: بدهکار: ۵۳۰۱ (خسارت سرقت و کلاهبرداری) | بستانکار: ۱۱۰۴ (موجودی کالا)'
+        },
+        {
+          id: 'node_invoice_voiding',
+          name: 'موتور ابطال و آرتیکل‌های معکوس (Voiding Engine)',
+          category: 'control',
+          color: '#F43F5E',
+          val: 16,
+          views: ['financial', 'architecture', 'full'],
+          badge: 'ابطال غیرمخرب ممیزی',
+          role: 'ابطال غیرمخرب فاکتورهای اشتباه با صدور آرتیکل‌های معکوس جبرانی و بازگشت دقیق موجودی به انبار بدون حذف تاریخچه سند.',
+          file: 'src/utils/erpEngine.ts:voidInvoice',
+          inputs: 'درخواست ابطال فاکتور فروش یا خرید همراه با ثبت علت و دلیل ابطال.',
+          outputs: 'تغییر وضعیت فاکتور به «ابطال‌شده»، ثبت ردیف جبرانی در کاردکس و تراز ماندن اسناد دفتر کل.',
+          formula: 'سند معکوس = جابجایی دقیق بدهکار و بستانکار سند اولیه با شرح «ابطال فاکتور»'
+        },
+
+        // 🟣 دسته ۵: معماری کد و ذخیره‌سازی
+        {
+          id: 'node_app_orchestrator',
+          name: 'ارکستراتور مرکزی برنامه (App.tsx)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 24,
+          views: ['architecture', 'full'],
+          badge: 'هسته React App',
+          role: 'هسته اجرایی کل برنامه؛ مدیریت State سراسری، هماهنگی ناوبری بین ماژول‌ها، توزیع رویدادها و محافظت از پایداری سیستم.',
+          file: 'src/App.tsx:1-3330',
+          inputs: 'کلیک‌های کاربر، تراکنش‌های صندوق، تغییرات انبار و فراخوانی‌های هوک‌ها.',
+          outputs: 'رندر نماهای UI، ارسال پروپ‌ها به ماژول‌ها و صدور دستور لاگ و ذخیره‌سازی.',
+          formula: 'تک‌منبع حقیقت (Single Source of Truth) برای کل چرخه حیات نرم‌افزار'
+        },
+        {
+          id: 'node_erp_engine',
+          name: 'موتور منطق و محاسبات مالی (erpEngine.ts)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 22,
+          views: ['architecture', 'full'],
+          badge: 'موتور محاسبات مالی',
+          role: 'کتابخانه توابع خالص (Pure Functions) حاوی هسته ریاضی حسابداری، ارزیابی انبار، فرمول‌های تراز و قاعده ۳ سطلی.',
+          file: 'src/utils/erpEngine.ts:1-2100',
+          inputs: 'آرایه‌های خام فاکتورها، حساب‌ها، موجودی انبار و نرخ‌های مالیاتی.',
+          outputs: 'اسناد دوبل حسابداری، ردیف‌های کاردکس، صورت‌های مالی تراز و گزارش‌های تحلیلی.',
+          formula: 'بیش از ۲۵ الگوریتم تست‌شده مالی با پوشش ۶۵ تست خودکار (Unit Tests)'
+        },
+        {
+          id: 'node_persistence_hook',
+          name: 'هوک پایداری داده‌ها (usePersistentArrayState)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 18,
+          views: ['architecture', 'full'],
+          badge: 'هوک ذخیره‌سازی محلی',
+          role: 'مدیریت خواندن و نوشتن امن روی localStorage با پشتیبانی از کش، بازیابی در صورت قطعی و جلوگیری از Race Condition.',
+          file: 'src/hooks/usePersistentArrayState.ts:1-85',
+          inputs: 'تغییرات State در آرایه‌های کالاها، فاکتورها، حساب‌ها و اسناد.',
+          outputs: 'ذخیره‌سازی بلادرنگ روی کلیدهای localStorage تحت نام‌گذاری `farapay.v1.*` و `emkan.v4.*`.',
+          formula: 'JSON.stringify(state) -> window.localStorage.setItem() با مکانیزم Fallback ایمن'
+        },
+        {
+          id: 'node_time_machine',
+          name: 'ماشین زمان بک‌آپ و ریستور JSON (Time Machine)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 19,
+          views: ['architecture', 'full'],
+          badge: 'ماشین زمان و بک‌آپ JSON',
+          role: 'موتور پشتیبان‌گیری کامل از ۱۲ جدول دیتابیس؛ خروجی فایل مستقل JSON، کد سلامت Checksum، بازگشت به گذشته و بازیابی در سیستم دیگر.',
+          file: 'src/App.tsx:501 & src/components/FrappeCoreModule.tsx:307',
+          inputs: 'درخواست ثبت بک‌آپ دستی توسط کاربر یا آپلود فایل بک‌آپ قبلی.',
+          outputs: 'تولید فایل JSON دانلودپذیر، بازیابی لحظه‌ای (Rehydration) و ریست امن حافظه.',
+          formula: 'کد هش سلامت = Checksum از جمع جبری کالاها، فاکتورها و مانده حساب‌ها'
+        },
+        {
+          id: 'node_audit_logger',
+          name: 'ممیزی و رویدادنگاری سیستم (System Audit Log)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 16,
+          views: ['architecture', 'full'],
+          badge: 'لاگ رویدادهای زنده',
+          role: 'ثبت ثانیه به ثانیه تمام اکشن‌های کاربر در سیستم (فروش، خرید، انبار، ابطال، شرکا، بک‌آپ) با تاریخ دقیق شمسی و دسته رویداد.',
+          file: 'src/components/FrappeCoreModule.tsx & src/App.tsx:310',
+          inputs: 'فراخوانی تابع recordAuditLog در سراسر برنامه به محض انجام هر عملیات حساس.',
+          outputs: 'جدول رویدادهای زنده در ماژول تنظیمات با قابلیت فیلتر بر اساس ۶ دسته و جستجوی متنی.',
+          formula: 'لاگ شفاف و غیرقابل انکار برای ردیابی خطاها و ممیزی‌های مالیاتی'
+        },
+        {
+          id: 'node_hesabfa_import',
+          name: 'موتور مهاجرت از حسابفا (Hesabfa Migration)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 16,
+          views: ['architecture', 'full'],
+          badge: 'ایمپورت اکسل حسابفا',
+          role: 'پردازش فایل‌های اکسل و CSV استخراج‌شده از نرم‌افزار حسابفا (شیت اشخاص، کالاها و فاکتورها) و تبدیل بدون خطای آن به فرمت استاندارد امکان.',
+          file: 'src/utils/hesabfaImport.ts:1-420',
+          inputs: 'فایل‌های اکسل سه گانه حسابفا با کاراکترهای فارسی/عربی، ردیف‌های خالی و تاریخ‌های شمسی.',
+          outputs: 'تزریق یکباره کاتالوگ، موجودی اولیه و فاکتورهای آرشیوی به دیتابیس با اعتبارسنجی ۱۰۰٪.',
+          formula: 'نرمال‌سازی ارقام فارسی به لاتین + تبدیل ی/ک عربی + یکتا‌سازی شناسه‌ها (Idempotent)'
+        },
+        {
+          id: 'node_bi_analytics',
+          name: 'داشبورد هوش تجاری و سودآوری (Analytics & BI)',
+          category: 'architecture',
+          color: '#8B5CF6',
+          val: 17,
+          views: ['architecture', 'full'],
+          badge: 'هوش تجاری و GMROI',
+          role: 'تحلیل داده‌های فروش و انبار؛ نمایش مقایسه‌ای فروش و هزینه روزانه، رشد ماهانه، سرعت گردش موجودی و شاخص GMROI.',
+          file: 'src/components/AnalyticsBiModule.tsx:1-480',
+          inputs: 'فاکتورهای فروش ثبت‌شده، هزینه‌های ثابت پرداخت‌شده و ارزش ریالی انبار.',
+          outputs: 'نمودارهای مقایسه‌ای، شاخص‌های سود ناخالص و نرخ بازدهی سرمایه‌گذاری انبار.',
+          formula: 'GMROI = سود ناخالص دوره ÷ میانگین بهای تمام شده موجودی انبار'
+        }
+      ],
+      links: [
+        // جریان مالی و حسابداری
+        { source: 'node_pos_terminal', target: 'node_sales_invoices', label: 'ثبت فاکتور فروش در صندوق', speed: 0.008, color: '#0EA5E9', width: 2.5 },
+        { source: 'node_sales_invoices', target: 'node_gl', label: 'صدور سند دوبل فروش', speed: 0.008, color: '#D4AF37', width: 3 },
+        { source: 'node_sales_invoices', target: 'node_cogs_cost', label: 'محاسبه بهای تمام شده (COGS)', speed: 0.006, color: '#F43F5E', width: 2 },
+        { source: 'node_sales_invoices', target: 'node_stock_cardex', label: 'ثبت خروج کالا در کاردکس', speed: 0.007, color: '#10B981', width: 2.5 },
+        { source: 'node_sales_invoices', target: 'node_tax_vat', label: 'تفکیک مالیات ارزش افزوده', speed: 0.005, color: '#D4AF37', width: 1.8 },
+        { source: 'node_sales_invoices', target: 'node_crm_contacts', label: 'ثبت سابقه و امتیاز وفاداری مشتری', speed: 0.005, color: '#0EA5E9', width: 1.8 },
+        { source: 'node_cogs_cost', target: 'node_gl', label: 'سند بدهکار ۵۱۰۱ / بستانکار ۱۱۰۴', speed: 0.007, color: '#D4AF37', width: 2.5 },
+        { source: 'node_cogs_cost', target: 'node_inventory_master', label: 'کسر ارزش از دارایی موجودی انبار', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_gl', target: 'node_coa', label: 'بروزرسانی مانده در درخت حساب‌ها', speed: 0.006, color: '#D4AF37', width: 2 },
+        { source: 'node_gl', target: 'node_trial_balance', label: 'تغذیه گردش و تراز آزمایشی ۶ ستونی', speed: 0.007, color: '#D4AF37', width: 2.5 },
+        { source: 'node_gl', target: 'node_financial_statements', label: 'محاسبه ترازنامه و سود و زیان', speed: 0.008, color: '#D4AF37', width: 3 },
+        { source: 'node_financial_statements', target: 'node_shareholders_equity', label: 'تزریق سود خالص به قاعده ۳ سطلی شرکا', speed: 0.007, color: '#D4AF37', width: 2.5 },
+        { source: 'node_journal_voucher', target: 'node_gl', label: 'ثبت سند روزنامه دستی در دفتر کل', speed: 0.006, color: '#D4AF37', width: 2 },
+        
+        // خرید بار و انبارداری
+        { source: 'node_purchase_invoices', target: 'node_warehouse_multi', label: 'ورود اولیه بار به انبار در راه (1105)', speed: 0.007, color: '#F43F5E', width: 2.5 },
+        { source: 'node_purchase_invoices', target: 'node_gl', label: 'سند بدهکار ۱۱۰۵ / بستانکار ۲۱۰۱', speed: 0.007, color: '#D4AF37', width: 2.5 },
+        { source: 'node_purchase_invoices', target: 'node_sku_breakdown', label: 'ارسال پارت خرید به صف تفکیک SKU', speed: 0.007, color: '#10B981', width: 2.5 },
+        { source: 'node_sku_breakdown', target: 'node_inventory_master', label: 'ثبت مشخصات فنی و بارکدها', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_sku_breakdown', target: 'node_stock_cardex', label: 'ثبت ورود قطعی به کاردکس با نرخ MWA', speed: 0.007, color: '#10B981', width: 2.5 },
+        { source: 'node_warehouse_multi', target: 'node_inter_warehouse_transfer', label: 'حواله انتقال از انبار در راه/مرکزی به ویترین', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_inter_warehouse_transfer', target: 'node_stock_cardex', label: 'اصلاح مانده مقداری کاردکس دو انبار', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_inventory_master', target: 'node_pos_terminal', label: 'نمایش کالاها و استعلام موجودی ویترین', speed: 0.006, color: '#0EA5E9', width: 2 },
+
+        // باندل، دکانت و خدمات
+        { source: 'node_bundles_promotions', target: 'node_pos_terminal', label: 'اعمال پکیج تخفیف در صندوق', speed: 0.006, color: '#0EA5E9', width: 2 },
+        { source: 'node_bundles_promotions', target: 'node_inventory_master', label: 'استعلام قطعات واقعی باندل', speed: 0.005, color: '#10B981', width: 1.8 },
+        { source: 'node_decant_station', target: 'node_pos_terminal', label: 'فروش میلی‌لیتری مایعات در صندوق', speed: 0.006, color: '#0EA5E9', width: 2 },
+        { source: 'node_decant_station', target: 'node_stock_cardex', label: 'ثبت خروج میلی‌لیتر و فک پلمپ شیشه', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_technical_services', target: 'node_pos_terminal', label: 'افزودن اجرت سرویس به فاکتور فروش', speed: 0.006, color: '#0EA5E9', width: 2 },
+        { source: 'node_technical_services', target: 'node_stock_cardex', label: 'کسر کویل/پنبه مصرفی از ویترین مغازه', speed: 0.005, color: '#10B981', width: 1.8 },
+
+        // مرجوعی، دزدی، خسارت و ابطال
+        { source: 'node_pos_returns', target: 'node_stock_cardex', label: 'بازگشت کالای مرجوعی به انبار ویترین', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_pos_returns', target: 'node_gl', label: 'سند حسابداری معکوس مرجوعی/تعویض', speed: 0.006, color: '#D4AF37', width: 2 },
+        { source: 'node_theft_fraud', target: 'node_stock_cardex', label: 'خروج کالای مسروقه/رسید فیک از انبار', speed: 0.006, color: '#F43F5E', width: 2 },
+        { source: 'node_theft_fraud', target: 'node_gl', label: 'سند بدهکار هزینه خسارت / بستانکار انبار', speed: 0.006, color: '#D4AF37', width: 2 },
+        { source: 'node_invoice_voiding', target: 'node_gl', label: 'آرتیکل معکوس جهت ابطال بی اثر سند', speed: 0.007, color: '#D4AF37', width: 2.2 },
+        { source: 'node_invoice_voiding', target: 'node_stock_cardex', label: 'برگشت ردیف مقداری ابطال به کاردکس', speed: 0.006, color: '#10B981', width: 2 },
+        { source: 'node_recurring_expenses', target: 'node_gl', label: 'ثبت قفل پرداخت هزینه ماهانه در دفتر کل', speed: 0.006, color: '#D4AF37', width: 2 },
+
+        // لایه معماری نرم‌افزار و زیرساخت
+        { source: 'node_app_orchestrator', target: 'node_erp_engine', label: 'فراخوانی توابع پردازش مالی و انبار', speed: 0.009, color: '#8B5CF6', width: 3 },
+        { source: 'node_app_orchestrator', target: 'node_pos_terminal', label: 'ارکستراسیون عملیات صندوق و فاکتورها', speed: 0.008, color: '#8B5CF6', width: 2.5 },
+        { source: 'node_app_orchestrator', target: 'node_warehouse_multi', label: 'مدیریت ماژول WMS و موجودی‌ها', speed: 0.007, color: '#8B5CF6', width: 2.5 },
+        { source: 'node_app_orchestrator', target: 'node_persistence_hook', label: 'سینک مداوم State با حافظه مرورگر', speed: 0.008, color: '#8B5CF6', width: 2.8 },
+        { source: 'node_persistence_hook', target: 'node_time_machine', label: 'تهیه اسنپ‌شات‌های پشتیبان JSON', speed: 0.007, color: '#8B5CF6', width: 2.5 },
+        { source: 'node_app_orchestrator', target: 'node_audit_logger', label: 'ثبت تمامی تراکنش‌ها و رویدادهای کاربر', speed: 0.007, color: '#8B5CF6', width: 2.2 },
+        { source: 'node_hesabfa_import', target: 'node_app_orchestrator', label: 'ایمپورت داده‌های حسابداری و اشخاص', speed: 0.006, color: '#8B5CF6', width: 2 },
+        { source: 'node_crm_contacts', target: 'node_marketing_leads', label: 'ارتباط مخاطبان با سرنخ‌های پیامکی', speed: 0.005, color: '#0EA5E9', width: 1.8 },
+        { source: 'node_bi_analytics', target: 'node_financial_statements', label: 'استخراج داده‌های P&L و سودآوری', speed: 0.006, color: '#8B5CF6', width: 2 },
+        { source: 'node_bi_analytics', target: 'node_stock_cardex', label: 'تحلیل شاخص سرعت گردش موجودی انبار', speed: 0.006, color: '#8B5CF6', width: 2 }
+      ]
+    };
+
+    // State Variables
+    let currentDimension = '3D'; // '3D' or '2D'
+    let currentView = 'full';     // 'full', 'financial', 'architecture'
+    let graphInstance = null;
+    let selectedNode = null;
+    let highlightNodes = new Set();
+    let highlightLinks = new Set();
+    let isPhysicsFrozen = false;
+    let particlesEnabled = true;
+
+    const container = document.getElementById('graph-container');
+
+    // Filter data according to current active view mode
+    function getFilteredData() {
+      let filteredNodes = RAW_GRAPH_DATA.nodes;
+      if (currentView !== 'full') {
+        filteredNodes = RAW_GRAPH_DATA.nodes.filter(n => n.views.includes(currentView));
+      }
+      const nodeIds = new Set(filteredNodes.map(n => n.id));
+      const filteredLinks = RAW_GRAPH_DATA.links.filter(l => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        return nodeIds.has(srcId) && nodeIds.has(tgtId);
+      });
+
+      document.getElementById('stat-nodes-count').textContent = filteredNodes.length.toLocaleString('fa-IR');
+      document.getElementById('stat-links-count').textContent = filteredLinks.length.toLocaleString('fa-IR');
+
+      return {
+        nodes: filteredNodes.map(n => ({ ...n })),
+        links: filteredLinks.map(l => ({ ...l }))
+      };
+    }
+
+    // Helper: Create Glowing 3D Node Object with Canvas Sprite Label
+    function create3DNodeObject(node) {
+      const group = new THREE.Group();
+      const isSelected = selectedNode && selectedNode.id === node.id;
+      const isHighlighted = highlightNodes.has(node.id);
+      
+      const radius = Math.max(3.5, (node.val || 5) * 0.7);
+      const sphereGeo = new THREE.SphereGeometry(radius, 24, 24);
+      
+      let opacity = 0.95;
+      let emissiveIntensity = 0.35;
+      if (selectedNode && !isHighlighted && !isSelected) {
+        opacity = 0.18;
+        emissiveIntensity = 0.05;
+      }
+      if (isSelected || isHighlighted) {
+        emissiveIntensity = 0.8;
+      }
+
+      const sphereMat = new THREE.MeshLambertMaterial({
+        color: node.color,
+        transparent: true,
+        opacity: opacity,
+        emissive: node.color,
+        emissiveIntensity: emissiveIntensity
+      });
+      const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+      group.add(sphere);
+
+      // Outer Selection Ring
+      if (isSelected) {
+        const ringGeo = new THREE.RingGeometry(radius * 1.3, radius * 1.5, 32);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        group.add(ring);
+      }
+
+      // Sprite Label
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 70;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = isSelected ? '#FFFFFF' : (isHighlighted ? '#FFFFFF' : '#CBD5E1');
+      ctx.font = 'bold 24px Vazirmatn, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      ctx.shadowBlur = 6;
+      ctx.fillText(node.name, 160, 35);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const spriteMat = new THREE.SpriteMaterial({ 
+        map: texture, 
+        transparent: true, 
+        depthWrite: false,
+        opacity: (selectedNode && !isHighlighted && !isSelected) ? 0.25 : 1.0
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(36, 8, 1);
+      sprite.position.set(0, radius + 6, 0);
+      group.add(sprite);
+
+      return group;
+    }
+
+    // Initialize or re-render Graph
+    function renderGraph() {
+      container.innerHTML = '';
+      const data = getFilteredData();
+
+      if (currentDimension === '3D') {
+        document.getElementById('stat-dim-label').textContent = 'WebGL 3D';
+        graphInstance = ForceGraph3D()(container)
+          .graphData(data)
+          .nodeId('id')
+          .nodeLabel(node => `<div style="font-family:Vazirmatn; direction:rtl; padding:6px 10px; background:rgba(15,23,42,0.9); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#fff;"><b>${node.name}</b><br><span style="font-size:11px; color:#94A3B8;">${node.badge}</span></div>`)
+          .nodeThreeObject(create3DNodeObject)
+          .linkDirectionalParticles(link => particlesEnabled ? 2 : 0)
+          .linkDirectionalParticleSpeed(link => link.speed || 0.006)
+          .linkDirectionalParticleWidth(link => link.width || 2)
+          .linkDirectionalParticleColor(link => link.color || '#D4AF37')
+          .linkColor(link => {
+            if (selectedNode) {
+              return highlightLinks.has(link) ? (link.color || '#FFFFFF') : 'rgba(255,255,255,0.04)';
+            }
+            return link.color || 'rgba(255,255,255,0.18)';
+          })
+          .linkWidth(link => {
+            if (selectedNode && highlightLinks.has(link)) return (link.width || 2) * 1.8;
+            return link.width || 1.5;
+          })
+          .backgroundColor('#07090E')
+          .onNodeClick(handleNodeClick)
+          .onBackgroundClick(() => {
+            closeInspector();
+          });
+
+        // Set initial camera distance
+        graphInstance.cameraPosition({ x: 0, y: 0, z: 420 }, { x: 0, y: 0, z: 0 }, 1200);
+
+      } else {
+        // 2D Mode
+        document.getElementById('stat-dim-label').textContent = 'Canvas 2D';
+        graphInstance = ForceGraph()(container)
+          .graphData(data)
+          .nodeId('id')
+          .nodeLabel(node => `<div style="font-family:Vazirmatn; direction:rtl; padding:6px 10px; background:rgba(15,23,42,0.9); border:1px solid rgba(255,255,255,0.2); border-radius:8px; color:#fff;"><b>${node.name}</b><br><span style="font-size:11px; color:#94A3B8;">${node.badge}</span></div>`)
+          .nodeRelSize(5)
+          .nodeCanvasObject((node, ctx, globalScale) => {
+            const isSelected = selectedNode && selectedNode.id === node.id;
+            const isHighlighted = highlightNodes.has(node.id);
+            const radius = (node.val || 5) * 0.7;
+
+            // Faded style when another node is selected
+            if (selectedNode && !isHighlighted && !isSelected) {
+              ctx.globalAlpha = 0.15;
+            } else {
+              ctx.globalAlpha = 1.0;
+            }
+
+            // Glow / Highlight Ring
+            if (isSelected || isHighlighted) {
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, radius * 1.8, 0, 2 * Math.PI, false);
+              ctx.fillStyle = isSelected ? 'rgba(255,255,255,0.25)' : (node.color + '44');
+              ctx.fill();
+            }
+
+            // Central Circle
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+            ctx.fillStyle = node.color;
+            ctx.fill();
+
+            // Node Name Label
+            const fontSize = Math.max(10, 13 / globalScale);
+            ctx.font = `bold ${fontSize}px Vazirmatn, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = isSelected ? '#FFFFFF' : '#CBD5E1';
+            ctx.fillText(node.name, node.x, node.y + radius + 3);
+
+            ctx.globalAlpha = 1.0;
+          })
+          .linkDirectionalParticles(link => particlesEnabled ? 2 : 0)
+          .linkDirectionalParticleSpeed(link => link.speed || 0.006)
+          .linkDirectionalParticleWidth(link => link.width || 2)
+          .linkDirectionalParticleColor(link => link.color || '#D4AF37')
+          .linkColor(link => {
+            if (selectedNode) {
+              return highlightLinks.has(link) ? (link.color || '#FFFFFF') : 'rgba(255,255,255,0.04)';
+            }
+            return link.color || 'rgba(255,255,255,0.18)';
+          })
+          .linkWidth(link => {
+            if (selectedNode && highlightLinks.has(link)) return (link.width || 2) * 2;
+            return link.width || 1.5;
+          })
+          .backgroundColor('#07090E')
+          .onNodeClick(handleNodeClick)
+          .onBackgroundClick(() => {
+            closeInspector();
+          });
+
+        graphInstance.zoom(1.8, 1000);
+      }
+    }
+
+    // Node Click Inspector & Focus Handler
+    function handleNodeClick(node) {
+      if (!node) return;
+      selectedNode = node;
+      highlightNodes.clear();
+      highlightLinks.clear();
+
+      highlightNodes.add(node.id);
+
+      const allLinks = RAW_GRAPH_DATA.links;
+      const connectedNodes = [];
+
+      allLinks.forEach(link => {
+        const srcId = typeof link.source === 'object' ? link.source.id : link.source;
+        const tgtId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        if (srcId === node.id) {
+          highlightLinks.add(link);
+          highlightNodes.add(tgtId);
+          const tgtNode = RAW_GRAPH_DATA.nodes.find(n => n.id === tgtId);
+          if (tgtNode) connectedNodes.push({ node: tgtNode, relation: link.label, direction: 'outgoing' });
+        } else if (tgtId === node.id) {
+          highlightLinks.add(link);
+          highlightNodes.add(srcId);
+          const srcNode = RAW_GRAPH_DATA.nodes.find(n => n.id === srcId);
+          if (srcNode) connectedNodes.push({ node: srcNode, relation: link.label, direction: 'incoming' });
+        }
+      });
+
+      // Update Inspector Sidebar UI
+      const badgeElem = document.getElementById('inspector-badge');
+      badgeElem.textContent = node.badge || 'بخش اصلی';
+      badgeElem.style.background = node.color + '22';
+      badgeElem.style.color = node.color;
+      badgeElem.style.border = `1px solid ${node.color}55`;
+
+      document.getElementById('inspector-title').textContent = node.name;
+      document.getElementById('inspector-role').textContent = node.role;
+      document.getElementById('inspector-file').textContent = node.file;
+      document.getElementById('inspector-inputs').textContent = node.inputs;
+      document.getElementById('inspector-outputs').textContent = node.outputs;
+      document.getElementById('inspector-formula').textContent = node.formula;
+
+      // Connected Nodes Tag Buttons
+      const connectedContainer = document.getElementById('inspector-connected');
+      connectedContainer.innerHTML = '';
+      connectedNodes.forEach(item => {
+        const tag = document.createElement('button');
+        tag.className = 'tag-btn';
+        tag.innerHTML = `<span style="color:${item.node.color}">●</span> ${item.node.name} <span style="opacity:0.6; font-size:9.5px;">(${item.relation})</span>`;
+        tag.onclick = () => {
+          const targetNode = RAW_GRAPH_DATA.nodes.find(n => n.id === item.node.id);
+          if (targetNode) handleNodeClick(targetNode);
+        };
+        connectedContainer.appendChild(tag);
+      });
+
+      document.getElementById('inspector-panel').classList.add('open');
+
+      // Camera Smooth Zoom
+      if (currentDimension === '3D' && graphInstance) {
+        const dist = 90;
+        const distRatio = 1 + dist / Math.hypot(node.x, node.y, node.z || 1);
+        graphInstance.cameraPosition(
+          { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
+          { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
+          1200
+        );
+        // Refresh 3D node visuals
+        graphInstance.nodeThreeObject(create3DNodeObject);
+      } else if (graphInstance) {
+        // 2D Smooth Pan & Zoom
+        graphInstance.centerAt(node.x, node.y, 1000);
+        graphInstance.zoom(3.2, 1000);
+      }
+    }
+
+    // Close Inspector
+    function closeInspector() {
+      selectedNode = null;
+      highlightNodes.clear();
+      highlightLinks.clear();
+      document.getElementById('inspector-panel').classList.remove('open');
+      if (currentDimension === '3D' && graphInstance) {
+        graphInstance.nodeThreeObject(create3DNodeObject);
+      }
+    }
+
+    // Dimension Switcher (2D / 3D)
+    function setDimension(dim) {
+      if (currentDimension === dim) return;
+      currentDimension = dim;
+      document.getElementById('dim-3d-btn').classList.toggle('active', dim === '3D');
+      document.getElementById('dim-3d-btn').classList.toggle('active-gold', dim === '3D');
+      document.getElementById('dim-2d-btn').classList.toggle('active', dim === '2D');
+      document.getElementById('dim-2d-btn').classList.toggle('active-gold', dim === '2D');
+      renderGraph();
+    }
+
+    // View Switcher (Full, Financial, Architecture)
+    function switchView(viewKey) {
+      currentView = viewKey;
+      document.getElementById('view-full-btn').classList.toggle('active', viewKey === 'full');
+      document.getElementById('view-financial-btn').classList.toggle('active', viewKey === 'financial');
+      document.getElementById('view-arch-btn').classList.toggle('active', viewKey === 'architecture');
+      closeInspector();
+      renderGraph();
+    }
+
+    // Live Search
+    function handleSearch(query) {
+      const q = (query || '').trim().toLowerCase();
+      const dropdown = document.getElementById('search-dropdown');
+      if (!q) {
+        dropdown.style.display = 'none';
+        dropdown.innerHTML = '';
+        return;
+      }
+
+      const matches = RAW_GRAPH_DATA.nodes.filter(n => 
+        n.name.toLowerCase().includes(q) || 
+        n.role.toLowerCase().includes(q) || 
+        n.file.toLowerCase().includes(q)
+      );
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = '<div style="padding:10px; font-size:11px; color:#94a3b8; text-align:center;">بخشی پیدا نشد</div>';
+        dropdown.style.display = 'block';
+        return;
+      }
+
+      dropdown.innerHTML = matches.slice(0, 8).map(m => `
+        <div class="search-item" onclick="selectFromSearch('${m.id}')">
+          <span style="font-weight:600;"><span style="color:${m.color}">●</span> ${m.name}</span>
+          <span style="font-size:10px; color:#94a3b8;">${m.badge}</span>
+        </div>
+      `).join('');
+      dropdown.style.display = 'block';
+    }
+
+    function selectFromSearch(nodeId) {
+      const node = RAW_GRAPH_DATA.nodes.find(n => n.id === nodeId);
+      if (!node) return;
+      document.getElementById('search-input').value = node.name;
+      document.getElementById('search-dropdown').style.display = 'none';
+      handleNodeClick(node);
+    }
+
+    // Close search dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box-wrapper')) {
+        document.getElementById('search-dropdown').style.display = 'none';
+      }
+    });
+
+    // Reset Camera
+    function resetCamera() {
+      closeInspector();
+      if (currentDimension === '3D' && graphInstance) {
+        graphInstance.cameraPosition({ x: 0, y: 0, z: 420 }, { x: 0, y: 0, z: 0 }, 1000);
+      } else if (graphInstance) {
+        graphInstance.centerAt(0, 0, 1000);
+        graphInstance.zoom(1.8, 1000);
+      }
+    }
+
+    // Toggle Physics
+    function togglePhysics() {
+      isPhysicsFrozen = !isPhysicsFrozen;
+      const btn = document.getElementById('freeze-btn');
+      if (isPhysicsFrozen) {
+        btn.innerHTML = '<span>▶️ ادامه حرکت</span>';
+        btn.classList.add('active');
+        if (graphInstance.pauseAnimation) graphInstance.pauseAnimation();
+      } else {
+        btn.innerHTML = '<span>⏸️ فیزیک</span>';
+        btn.classList.remove('active');
+        if (graphInstance.resumeAnimation) graphInstance.resumeAnimation();
+      }
+    }
+
+    // Toggle Particles
+    function toggleParticles() {
+      particlesEnabled = !particlesEnabled;
+      const btn = document.getElementById('particles-btn');
+      btn.classList.toggle('active', particlesEnabled);
+      if (graphInstance) {
+        graphInstance.linkDirectionalParticles(link => particlesEnabled ? 2 : 0);
+      }
+    }
+
+    // Filter by Legend Category
+    function filterByCategory(cat) {
+      const firstInCat = RAW_GRAPH_DATA.nodes.find(n => n.category === cat);
+      if (firstInCat) {
+        handleNodeClick(firstInCat);
+      }
+    }
+
+    // Handle Window Resize
+    window.addEventListener('resize', () => {
+      if (graphInstance) {
+        graphInstance.width(window.innerWidth);
+        graphInstance.height(window.innerHeight);
+      }
+    });
+
+    // Initial Launch
+    window.addEventListener('DOMContentLoaded', () => {
+      renderGraph();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "امکان (Emkan ERP) — سیستم هوشمند مالی",
+  "description": "سیستم هوشمند مالی امکان — کلادی شاپ",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

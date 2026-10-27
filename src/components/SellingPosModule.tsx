@@ -218,6 +218,7 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [isSearchPopoverOpen, setIsSearchPopoverOpen] = useState(false);
   const [pricingMode, setPricingMode] = useState<'normal' | 'festival' | 'reseller'>('normal');
+  const [showCartBuyPrice, setShowCartBuyPrice] = useState(false);
   const [showConfirmSaleModal, setShowConfirmSaleModal] = useState(false);
   const [showConfirmPurchaseModal, setShowConfirmPurchaseModal] = useState(false);
 
@@ -925,13 +926,25 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
             type="button"
             onClick={() => setActiveView('reseller_pricelist')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeView === 'reseller_pricelist' || activeView === 'festival_pricelist'
+              activeView === 'reseller_pricelist'
+                ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-indigo-500" />
+            <span>لیست قیمت همکاران (ریسلر)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('festival_pricelist')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeView === 'festival_pricelist'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>لیست قیمت همکار و جشنواره</span>
+            <span>لیست قیمت جشنواره</span>
           </button>
         </div>
 
@@ -1482,12 +1495,24 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
               </PolarisCollapsible>
             </div>
 
-            {/* Compact Header for Cart Items */}
+            {/* Compact Header for Cart Items + Discreet Eye Toggle */}
             <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className="font-bold text-slate-800 dark:text-slate-200">
                   اقلام سبد خرید ({cart.length + serviceLines.length})
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCartBuyPrice((prev) => !prev)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                  aria-label="مشاهده کد مخفی سبد"
+                >
+                  {showCartBuyPrice ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                </button>
               </div>
               <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
                 {pricingModeBadgeLabel}
@@ -1585,9 +1610,9 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
                                   <span>فروش ml</span>
                                 </label>
                               )}
-                              {!privacyMasked && (
-                                <span className="font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                                  خرید: {formatCurrency(rowBuyCost)} ت
+                              {!privacyMasked && showCartBuyPrice && (
+                                <span className="font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded tabular-nums">
+                                  {formatCurrency(rowBuyCost)} ت
                                 </span>
                               )}
                             </div>
@@ -1849,18 +1874,108 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
               </div>
             </div>
 
-            {/* SINGLE PRIMARY ACTION BUTTON (Polaris Button Rule: 1 Primary CTA with loading lock) */}
-            <PolarisButton
-              primary
-              fullWidth
-              size="large"
-              loading={isSubmittingSale}
-              disabled={isSubmittingSale || (cart.length === 0 && serviceLines.length === 0) || !paymentAccountCode}
-              icon={<Printer className="w-4 h-4" />}
-              onClick={handleSubmitPosInvoice}
-            >
-              ثبت فاکتور ({pricingModeBadgeLabel}) و چاپ فیش
-            </PolarisButton>
+            {/* PRIMARY CHECKOUT & DIRECT TEXT RECEIPT EXPORT */}
+            <div className="flex flex-col sm:flex-row items-stretch gap-2">
+              <div className="flex-1">
+                <PolarisButton
+                  primary
+                  fullWidth
+                  size="large"
+                  loading={isSubmittingSale}
+                  disabled={isSubmittingSale || (cart.length === 0 && serviceLines.length === 0) || !paymentAccountCode}
+                  icon={<Printer className="w-4 h-4" />}
+                  onClick={handleSubmitPosInvoice}
+                >
+                  ثبت فاکتور ({pricingModeBadgeLabel}) و چاپ فیش
+                </PolarisButton>
+              </div>
+              <PolarisButton
+                size="large"
+                outline
+                disabled={(cart.length === 0 && serviceLines.length === 0) && !lastReceiptSnapshot}
+                icon={<FileText className="w-4 h-4 text-indigo-600" />}
+                onClick={() => {
+                  const activeSnapshot: PosCheckoutPayload | null =
+                    cart.length > 0 || serviceLines.length > 0
+                      ? {
+                          cartLines: cart.map((r) => {
+                            const gross = Math.round(r.qty * r.manualUnitPrice);
+                            const lDisc = Math.max(0, Number(r.lineDiscount) || 0);
+                            return {
+                              sku: r.item.sku,
+                              name: r.item.name,
+                              qty: r.qty,
+                              uom: r.isDecantMl ? 'میلی‌لیتر' : 'عدد',
+                              isDecantMl: r.isDecantMl,
+                              systemUnitPrice: getSystemUnitPrice(r.item, r.isDecantMl, pricingMode),
+                              finalManualUnitPrice: r.manualUnitPrice,
+                              lineDiscount: lDisc,
+                              unitValuationCost: r.item.valuationRate,
+                              sector: r.item.sector || 'vape',
+                              warehouseKey: r.warehouseKey,
+                              netLineAmount: Math.max(0, gross - lDisc),
+                            };
+                          }),
+                          serviceLines,
+                          pricingMode,
+                          grossTotal: goodsTotal + servicesTotal,
+                          festivalDiscountAmount: festivalExtraDiscount,
+                          totalLineDiscounts,
+                          netTotal: grandTotal,
+                          paidAmount: finalEffectivePaidAmount,
+                          creditReceivableAmount: finalCreditReceivableAmount,
+                          paymentAccountCode: (paymentAccountCode || '110101') as '110101' | '110102' | '110103',
+                          paymentMethodLabel:
+                            paymentAccountCode === '110101'
+                              ? 'کارتخوان (پوز)'
+                              : paymentAccountCode === '110102'
+                                ? 'کارت بانکی (کارت به کارت)'
+                                : 'نقد (صندوق مغازه)',
+                          customerName: selectedCustomer?.fullName || customerSearch.trim() || 'مشتری حضوری',
+                          customerPhone: selectedCustomer?.phone,
+                        }
+                      : lastReceiptSnapshot;
+
+                  if (!activeSnapshot) return;
+                  setLastReceiptSnapshot(activeSnapshot);
+                  setReceiptModalTab('text');
+                  setShowThermalReceipt(true);
+                  const invNo = `POS-${salesInvoices.length + 1}`;
+                  const txt = generatePlainTextReceipt({
+                    invoiceNo: invNo,
+                    customerName: activeSnapshot.customerName,
+                    customerPhone: activeSnapshot.customerPhone,
+                    date: formatPersianDate(new Date()),
+                    cashierName: 'صندوق فروشگاه امکان',
+                    cartLines: activeSnapshot.cartLines.map((l) => ({
+                      name: l.name,
+                      sku: l.sku,
+                      qty: l.qty,
+                      uom: l.uom,
+                      finalManualUnitPrice: l.finalManualUnitPrice,
+                      lineDiscount: l.lineDiscount,
+                      netLineAmount: l.netLineAmount,
+                    })),
+                    serviceLines: activeSnapshot.serviceLines.map((s) => ({
+                      serviceTitle: s.serviceTitle,
+                      feeAmount: s.feeAmount,
+                    })),
+                    goodsTotal: activeSnapshot.grossTotal,
+                    servicesTotal: activeSnapshot.serviceLines.reduce((s, x) => s + x.feeAmount, 0),
+                    totalDiscount:
+                      (activeSnapshot.totalLineDiscounts || 0) +
+                      (activeSnapshot.festivalDiscountAmount || 0),
+                    grandTotal: activeSnapshot.netTotal,
+                    paidAmount: activeSnapshot.paidAmount,
+                    paymentMethodLabel: activeSnapshot.paymentMethodLabel,
+                  });
+                  triggerBrowserDownload(txt, `${invNo}.txt`, 'text/plain;charset=utf-8');
+                  onShowToast('فایل متنی فیش (.txt) دانلود شد و پیش‌نمایش متنی باز گردید.');
+                }}
+              >
+                خروجی متن فیش (Text)
+              </PolarisButton>
+            </div>
           </div>
         </div>
       )}

@@ -23,6 +23,7 @@ import {
 import {
   PurchaseInvoiceSheetsGrid,
   PurchaseInvoiceLineGridItem,
+  createEmptyPurchaseRow,
 } from './PurchaseInvoiceSheetsGrid';
 import { CreatableCombobox } from './CreatableCombobox';
 import { CurrencyInput, parseCommaNumber, formatLiveComma } from './CurrencyInput';
@@ -190,7 +191,9 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
   // Form states
   const [pinvSupplier, setPinvSupplier] = useState('');
   const [pinvFreightCost, setPinvFreightCost] = useState<number>(0);
-  const [pinvLines, setPinvLines] = useState<PurchaseInvoiceLineGridItem[]>([]);
+  const [pinvLines, setPinvLines] = useState<PurchaseInvoiceLineGridItem[]>(() =>
+    Array.from({ length: 10 }, (_, idx) => createEmptyPurchaseRow(idx))
+  );
   const [pinvDiscountReceived, setPinvDiscountReceived] = useState('');
   const [pinvDeliveryStatus, setPinvDeliveryStatus] = useState<'در انتظار رسیدن بار' | 'رسیده' | ''>(
     ''
@@ -201,9 +204,10 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
   const [pinvSettlementDueDate, setPinvSettlementDueDate] = useState<string>('');
   const [pinvPaymentNotes, setPinvPaymentNotes] = useState<string>('');
 
-  // Modals
+  // Modals & Inline Fast Supplier Completion
   const [showConfirmPurchaseModal, setShowConfirmPurchaseModal] = useState(false);
   const [isSupplierSheetOpen, setIsSupplierSheetOpen] = useState(false);
+  const [inlineNewSupplierMode, setInlineNewSupplierMode] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
   const [newSupplierPhone, setNewSupplierPhone] = useState('');
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
@@ -386,7 +390,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
       setPinvFreightCost(0);
       setPinvPaymentNotes('');
       setPinvSettlementDueDate('');
-      setPinvLines([]);
+      setPinvLines(Array.from({ length: 10 }, (_, idx) => createEmptyPurchaseRow(idx)));
 
       // Transition to SKU Intake Queue
       if (onTransitionToIntake) {
@@ -423,17 +427,53 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
       >
         {/* Top Row: Supplier & Warehouse Routing */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 bg-slate-50 dark:bg-slate-800/40 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800">
-          {/* 1. Supplier Name with Search from Suppliers only */}
-          <CreatableCombobox
-            label="۱. نام فروشنده / تأمین‌کننده *"
-            value={pinvSupplier}
-            onChange={setPinvSupplier}
-            options={supplierOptions}
-            onAddNewOption={(newSup) => handleOpenAddSupplier(newSup)}
-            onPlusButtonClick={() => handleOpenAddSupplier()}
-            plusButtonTitle="ثبت تأمین‌کننده جدید با شماره تماس (+)"
-            placeholder="جستجو در تأمین‌کنندگان یا کلیک (+) برای ایجاد..."
-          />
+          {/* 1. Supplier Name with Search from Suppliers only + Fast Enter Creation */}
+          <div className="space-y-1.5">
+            <CreatableCombobox
+              label="۱. نام فروشنده / تأمین‌کننده *"
+              value={pinvSupplier}
+              onChange={setPinvSupplier}
+              options={supplierOptions}
+              onAddNewOption={(newSup) => {
+                setPinvSupplier(newSup);
+                setNewSupplierName(newSup);
+                setNewSupplierPhone('');
+                setInlineNewSupplierMode(true);
+              }}
+              onPlusButtonClick={() => handleOpenAddSupplier()}
+              plusButtonTitle="ثبت تأمین‌کننده جدید با شماره تماس (+)"
+              placeholder="جستجو در تأمین‌کنندگان یا تایپ نام جدید + Enter..."
+            />
+            {inlineNewSupplierMode && (
+              <div className="p-2 rounded-lg bg-indigo-50/90 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 animate-in fade-in duration-150">
+                <input
+                  type="text"
+                  autoFocus
+                  value={newSupplierPhone}
+                  onChange={(e) => setNewSupplierPhone(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      onQuickAddSupplier?.(newSupplierName.trim() || pinvSupplier.trim(), newSupplierPhone.trim());
+                      setInlineNewSupplierMode(false);
+                    }
+                  }}
+                  placeholder="تلفن تأمین‌کننده جدید (اختیاری) + Enter..."
+                  className="flex-1 px-2 py-1 text-[11px] font-mono bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded"
+                />
+                <PolarisButton
+                  size="micro"
+                  primary
+                  onClick={() => {
+                    onQuickAddSupplier?.(newSupplierName.trim() || pinvSupplier.trim(), newSupplierPhone.trim());
+                    setInlineNewSupplierMode(false);
+                  }}
+                >
+                  ثبت سریع
+                </PolarisButton>
+              </div>
+            )}
+          </div>
 
           <div>
             <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">

@@ -492,7 +492,14 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
                     <React.Fragment key={contact.id}>
                       <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="py-2 px-3 font-bold text-slate-900 dark:text-slate-100">
-                          {contact.fullName}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{contact.fullName}</span>
+                            {contact.custInvoices.some((inv) => Boolean(inv.returnAgainst)) && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                مرجوعی
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3 text-slate-600 dark:text-slate-400">
                           {roleLabel}
@@ -562,10 +569,15 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
                                       key={inv.id}
                                       className="flex items-center justify-between py-1 px-2.5 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700"
                                     >
-                                      <div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-mono font-bold ml-2">
                                           {inv.invoiceNo}
                                         </span>
+                                        {inv.returnAgainst && (
+                                          <span className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                            مرجوعی ({inv.returnAgainst})
+                                          </span>
+                                        )}
                                         <span className="text-slate-500">{inv.date}</span>
                                         <span className="mr-2 font-medium">
                                           {inv.itemsSummary || 'فاکتور فروش'}

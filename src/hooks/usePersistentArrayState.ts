@@ -285,16 +285,46 @@ export async function readMultiStoreSnapshot(): Promise<Record<string, unknown[]
 
     for (const storeName of IDB_STORES) {
       const store = transaction.objectStore(storeName);
-      const request = store.getAll();
-      request.onsuccess = () => {
-        results[storeName] = Array.isArray(request.result) ? request.result : [];
+      const keysReq = store.getAllKeys();
+      const valsReq = store.getAll();
+      let keysDone = false;
+      let valsDone = false;
+      let keysResult: IDBValidKey[] = [];
+      let valsResult: unknown[] = [];
+
+      const finalizeStore = () => {
+        if (!keysDone || !valsDone) return;
+        results[storeName] = valsResult;
+        results[`${storeName}:entries`] = keysResult.map((k, idx) => ({
+          key: String(k),
+          value: valsResult[idx],
+        }));
+        for (let i = 0; i < keysResult.length; i++) {
+          const k = String(keysResult[i]);
+          if (Array.isArray(valsResult[i])) {
+            results[k] = valsResult[i] as unknown[];
+          }
+        }
         remaining--;
         if (remaining === 0) {
           resolve(results);
         }
       };
-      request.onerror = () =>
-        reject(request.error || new Error(`خطا در خواندن جدول «${storeName}».`));
+
+      keysReq.onsuccess = () => {
+        keysResult = Array.isArray(keysReq.result) ? keysReq.result : [];
+        keysDone = true;
+        finalizeStore();
+      };
+      valsReq.onsuccess = () => {
+        valsResult = Array.isArray(valsReq.result) ? valsReq.result : [];
+        valsDone = true;
+        finalizeStore();
+      };
+      keysReq.onerror = () =>
+        reject(keysReq.error || new Error(`خطا در خواندن کلیدهای جدول «${storeName}».`));
+      valsReq.onerror = () =>
+        reject(valsReq.error || new Error(`خطا در خواندن جدول «${storeName}».`));
     }
     transaction.onerror = () =>
       reject(transaction.error || new Error('تراکنش خواندن یکپارچه پایگاه داده ناموفق بود.'));

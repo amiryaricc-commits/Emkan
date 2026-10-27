@@ -1412,7 +1412,6 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
                                 <th className="py-2 px-3">#</th>
                                 <th className="py-2 px-3">نام محصول</th>
                                 <th className="py-2 px-3 font-mono">کد SKU</th>
-                                <th className="py-2 px-3">صنف</th>
                                 <th className="py-2 px-3">تعداد / مقدار</th>
                                 <th className="py-2 px-3">قیمت واحد (تومان)</th>
                                 <th className="py-2 px-3">تخفیف سطر</th>
@@ -1425,13 +1424,6 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
                                   <td className="py-2 px-3 text-slate-400 font-mono">{idx + 1}</td>
                                   <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-200">{line.itemName}</td>
                                   <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{line.sku || '—'}</td>
-                                  <td className="py-2 px-3">
-                                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                                      line.sector === 'pc' ? 'bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300' : 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
-                                    }`}>
-                                      {line.sector === 'pc' ? 'کامپیوتر' : 'ویپ'}
-                                    </span>
-                                  </td>
                                   <td className="py-2 px-3 font-bold font-mono">
                                     {line.qty} <span className="font-normal text-[11px] text-slate-400">{line.uom || 'عدد'}</span>
                                   </td>
@@ -1765,6 +1757,65 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
               />
             </div>
           </div>
+
+          {/* SMART BALANCE SHEET ANALYTICAL RATIOS PANEL (Decision #2) */}
+          {(() => {
+            const liquidCashAndBank = accounts
+              .filter((a) => a.level === 'تفصیلی' && a.code.startsWith('1101'))
+              .reduce((s, a) => s + (a.balance || 0), 0);
+            const receivables = accounts
+              .filter((a) => a.code === '1102' || a.code === '1103')
+              .reduce((s, a) => s + (a.balance || 0), 0);
+            const inventoryAssets = accounts
+              .filter((a) => a.level === 'تفصیلی' && a.code.startsWith('1104'))
+              .reduce((s, a) => s + (a.balance || 0), 0);
+            const currentAssets = liquidCashAndBank + receivables + inventoryAssets;
+            const currentLiabilities = Math.max(0, financialStatements.totalLiabilities);
+            const netWorkingCapital = currentAssets - currentLiabilities;
+            const currentRatio =
+              currentLiabilities > 0 ? (currentAssets / currentLiabilities).toFixed(2) : '∞ (بدون بدهی)';
+            const quickRatio =
+              currentLiabilities > 0
+                ? ((liquidCashAndBank + receivables) / currentLiabilities).toFixed(2)
+                : '∞ (بدون بدهی)';
+            const inventoryToAssetPercent =
+              financialStatements.totalAssets > 0
+                ? Math.round((inventoryAssets / financialStatements.totalAssets) * 100)
+                : 0;
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500">۱. سرمایه در گردش خالص (Net Working Capital)</div>
+                  <div className="text-sm font-mono font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
+                    {maskCurrency(netWorkingCapital)} ت
+                  </div>
+                  <div className="text-[10px] text-slate-400">دارایی‌های جاری منهای بدهی‌های جاری</div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500">۲. نسبت جاری (Current Ratio)</div>
+                  <div className="text-sm font-mono font-black text-indigo-700 dark:text-indigo-400 tabular-nums">
+                    {currentRatio}
+                  </div>
+                  <div className="text-[10px] text-slate-400">توان پوشش بدهی‌های کوتاه‌مدت</div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500">۳. نسبت آنی (Quick Ratio)</div>
+                  <div className="text-sm font-mono font-black text-sky-700 dark:text-sky-400 tabular-nums">
+                    {quickRatio}
+                  </div>
+                  <div className="text-[10px] text-slate-400">نقدینگی و مطالبات بدون اتکا به فروش انبار</div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-500">۴. سهم خواب سرمایه در انبار</div>
+                  <div className="text-sm font-mono font-black text-amber-700 dark:text-amber-400 tabular-nums">
+                    {inventoryToAssetPercent}% از کل دارایی‌ها
+                  </div>
+                  <div className="text-[10px] text-slate-400">نسبت ارزش ریالی ۵ انبار به کل دارایی‌ها</div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
             <table className="w-full text-xs text-right border-collapse">

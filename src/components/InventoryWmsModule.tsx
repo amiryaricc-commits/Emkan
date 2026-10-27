@@ -230,9 +230,11 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
     return { totalServices: count, totalEstCost: cost };
   }, [salesInvoices, selectedCalibItem]);
 
-  // Tab 2: Stage-2 SKU Allocation IndexTable & Line-by-Line Breakdown
+  // Tab 2: Stage-2 SKU Allocation IndexTable & Line-by-Line Breakdown (30 empty rows by default)
   const [selectedPurchaseLineKey, setSelectedPurchaseLineKey] = useState<string>('');
-  const [breakdownRows, setBreakdownRows] = useState<SkuBreakdownRow[]>([]);
+  const [breakdownRows, setBreakdownRows] = useState<SkuBreakdownRow[]>(() =>
+    Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx))
+  );
   // Row-level Collapsible state for the 11 technical specs — null = ALL CLOSED by default, single row isolated
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [skuDiscrepancyModalData, setSkuDiscrepancyModalData] = useState<{
@@ -311,7 +313,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
   const handleSelectPurchaseLine = (key: string) => {
     setSelectedPurchaseLineKey(key);
     if (!key) {
-      setBreakdownRows([]);
+      setBreakdownRows(Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx)));
       return;
     }
     const parts = key.split(':::');
@@ -319,11 +321,14 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
     const lId = parts[1];
     const pInv = (purchaseInvoices.length > 0 ? purchaseInvoices : pendingBreakdownPurchases).find((p) => p.id === pId);
     const pLine = pInv?.lines?.find((l) => l.id === lId);
+    const targetWh = (pLine?.warehouseKey || 'vitrine') as WarehouseKey;
     if (pInv) {
-      setBreakdownRows([]);
+      setBreakdownRows(
+        Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx, targetWh))
+      );
       onShowToast(
         pLine
-          ? `فاکتور ${pInv.billNo} انتخاب شد؛ جدول خالی است. تگ کالا را از گزارش مغایرت کپی کنید.`
+          ? `فاکتور ${pInv.billNo} انتخاب شد؛ شیت ۳۰ سطری آماده است. تگ کالا را از گزارش مغایرت کپی کنید.`
           : `فاکتور ${pInv.billNo} انتخاب شد؛ برای ورود، تگ کالا را از گزارش مغایرت کپی کنید.`
       );
     }
@@ -803,7 +808,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
         parsedItems,
         selectedLineId || null
       );
-      setBreakdownRows([]);
+      setBreakdownRows(Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx)));
       setIsSubmittingBreakdown(false);
       setSkuDiscrepancyModalData(null);
       setSelectedPurchaseLineKey('');
@@ -928,7 +933,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>جشنواره و باندل کالا</span>
+            <span>کمپین تخفیف و باندل کالا</span>
           </button>
         </div>
 
@@ -1395,8 +1400,18 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                           {item.sku}
                         </td>
                         <td className="py-2 px-3">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 transition-colors">
-                            {item.name}
+                          <div className="font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 transition-colors flex items-center gap-1.5 flex-wrap">
+                            <span>{item.name}</span>
+                            {stockLedgerEntries.some(
+                              (e) =>
+                                e.sku === item.sku &&
+                                (e.voucherType === 'Sales Return' ||
+                                  (e.voucherType as string) === 'مرجوعی فروش')
+                            ) && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                مرجوعی
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-500">
                             {item.brand ? `${item.brand} · ` : ''}
@@ -1716,7 +1731,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600'
                                 }`}
                               >
-                                {row.voucherType}
+                                {row.voucherType === 'Sales Return' ? 'مرجوعی' : row.voucherType}
                               </span>
                             </div>
                           </td>
@@ -3167,10 +3182,10 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  جدول قوانین جشنواره و تخفیف‌های هوشمند ({promotionRules.length} قانون)
+                  جدول قوانین کمپین تخفیف و باندل‌های هوشمند ({promotionRules.length} قانون)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  برای تعریف جشنواره یا ساخت باندل جدید از دکمه‌های (+) استفاده کنید.
+                  برای تعریف کمپین تخفیف یا ساخت باندل جدید از دکمه‌های (+) استفاده کنید.
                 </p>
               </div>
               <PolarisButtonGroup>
@@ -3187,7 +3202,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                   icon={<Plus className="w-3.5 h-3.5" />}
                   onClick={() => setIsPromoSheetOpen(true)}
                 >
-                  جشنواره جدید
+                  کمپین تخفیف جدید
                 </PolarisButton>
               </PolarisButtonGroup>
             </div>
@@ -3446,7 +3461,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
       <PolarisSheet
         open={isPromoSheetOpen}
         onClose={() => setIsPromoSheetOpen(false)}
-        title="تعریف قانون جشنواره و تخفیف جدید"
+        title="تعریف قانون کمپین تخفیف جدید"
         footer={
           <>
             <PolarisButton onClick={() => setIsPromoSheetOpen(false)}>انصراف</PolarisButton>
@@ -3796,9 +3811,9 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
             </div>
 
             {/* Financial Details & Pricing */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
               <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 block">بهای تمام‌شده واحد</span>
+                <span className="text-[10px] text-slate-400 block">میانگین موزون خرید</span>
                 <span className="font-mono font-bold text-xs tabular-nums text-slate-800 dark:text-slate-200">
                   {!privacyMasked
                     ? `${formatCurrency(selectedProductForPopup.valuationRate)} ت`
@@ -3814,8 +3829,16 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                 </span>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
-                <span className="text-[10px] text-slate-400 block">قیمت همکار / جشنواره</span>
+                <span className="text-[10px] text-slate-400 block">قیمت جشنواره</span>
                 <span className="font-mono font-bold text-xs tabular-nums text-amber-600 dark:text-amber-400">
+                  {selectedProductForPopup.festivalPrice || selectedProductForPopup.partnerPrice
+                    ? `${formatCurrency(selectedProductForPopup.festivalPrice || selectedProductForPopup.partnerPrice || 0)} ت`
+                    : '—'}
+                </span>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 block">قیمت فروش ری‌سلر</span>
+                <span className="font-mono font-bold text-xs tabular-nums text-indigo-600 dark:text-indigo-400">
                   {selectedProductForPopup.resellerPrice
                     ? `${formatCurrency(selectedProductForPopup.resellerPrice)} ت`
                     : '—'}
@@ -3834,6 +3857,16 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
             {/* Technical Specifications */}
             <div className="bg-slate-50/60 dark:bg-slate-800/30 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-[11px] grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div>
+                <span className="text-slate-400 block">تگ کالا:</span>
+                <span className="font-semibold">{selectedProductForPopup.parentTag || selectedProductForPopup.name}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">برند / مدل:</span>
+                <span className="font-semibold">
+                  {[selectedProductForPopup.brand, selectedProductForPopup.model].filter(Boolean).join(' · ') || '—'}
+                </span>
+              </div>
+              <div>
                 <span className="text-slate-400 block">دسته‌بندی:</span>
                 <span className="font-semibold">{selectedProductForPopup.category || '—'}</span>
               </div>
@@ -3844,6 +3877,10 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
               <div>
                 <span className="text-slate-400 block">حجم مایع:</span>
                 <span className="font-semibold">{selectedProductForPopup.liquidVolumeMl ? `${selectedProductForPopup.liquidVolumeMl} ml` : '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block">حجم باتری:</span>
+                <span className="font-semibold">{selectedProductForPopup.batteryCapacityMah ? `${selectedProductForPopup.batteryCapacityMah} mAh` : '—'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block">مقاومت کویل:</span>
@@ -3858,6 +3895,10 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                 <span className="font-semibold">{selectedProductForPopup.color || '—'}</span>
               </div>
               <div>
+                <span className="text-slate-400 block">وضعیت کالا:</span>
+                <span className="font-semibold">{selectedProductForPopup.condition || 'آکبند'}</span>
+              </div>
+              <div>
                 <span className="text-slate-400 block">فروش میلی‌لیتری:</span>
                 <span className="font-semibold">{selectedProductForPopup.allowDecantSale ? 'فعال ✓' : 'غیرفعال'}</span>
               </div>
@@ -3867,14 +3908,58 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
               </div>
             </div>
 
-            {/* Cardex In/Out Movement */}
-            <div className="flex items-center justify-between text-xs bg-slate-100 dark:bg-slate-800/70 p-2.5 rounded-xl font-mono">
-              <span className="text-slate-500 font-sans">گردش کل کالا:</span>
-              <div className="flex items-center gap-4">
-                <span className="text-emerald-600 font-bold">ورود: {selectedProductForPopup.totalInQty ?? selectedProductForPopup.stockQty}</span>
-                <span className="text-rose-600 font-bold">خروج: {selectedProductForPopup.totalOutQty ?? 0}</span>
-                <span className="text-slate-900 dark:text-white font-bold">مانده: {selectedProductForPopup.stockQty}</span>
+            {/* Cardex In/Out Movement & Mini History Table */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs bg-slate-100 dark:bg-slate-800/70 p-2.5 rounded-xl font-mono">
+                <span className="text-slate-500 font-sans font-bold">خلاصه تاریخچه کاردکس این محصول:</span>
+                <div className="flex items-center gap-4">
+                  <span className="text-emerald-600 font-bold">ورود: {selectedProductForPopup.totalInQty ?? selectedProductForPopup.stockQty}</span>
+                  <span className="text-rose-600 font-bold">خروج: {selectedProductForPopup.totalOutQty ?? 0}</span>
+                  <span className="text-slate-900 dark:text-white font-bold">مانده: {selectedProductForPopup.stockQty}</span>
+                </div>
               </div>
+              {(() => {
+                const itemCardexRows = stockLedgerEntries
+                  .filter((e) => e.sku === selectedProductForPopup.sku)
+                  .slice(0, 6);
+                if (itemCardexRows.length === 0) return null;
+                return (
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-36 overflow-y-auto text-[11px]">
+                    <table className="w-full text-right border-collapse">
+                      <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 border-b border-slate-200 dark:border-slate-700 sticky top-0">
+                        <tr>
+                          <th className="py-1.5 px-2">تاریخ</th>
+                          <th className="py-1.5 px-2">نوع سند</th>
+                          <th className="py-1.5 px-2">انبار</th>
+                          <th className="py-1.5 px-2 text-center">تغییر</th>
+                          <th className="py-1.5 px-2 text-center">مانده</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
+                        {itemCardexRows.map((cRow) => (
+                          <tr key={cRow.id}>
+                            <td className="py-1 px-2 text-slate-500">{cRow.postingDate}</td>
+                            <td className="py-1 px-2 font-sans">
+                              {cRow.voucherType === 'Sales Return' ? (
+                                <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">مرجوعی</span>
+                              ) : (
+                                cRow.voucherType
+                              )}
+                            </td>
+                            <td className="py-1 px-2 font-sans text-slate-600 dark:text-slate-400">
+                              {warehouses.find((w) => w.key === cRow.warehouseKey)?.name || cRow.warehouseKey}
+                            </td>
+                            <td className={`py-1 px-2 text-center font-bold ${cRow.qtyChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {cRow.qtyChange > 0 ? `+${cRow.qtyChange}` : cRow.qtyChange}
+                            </td>
+                            <td className="py-1 px-2 text-center font-bold">{cRow.balanceAfter}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Actions */}

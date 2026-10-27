@@ -174,7 +174,7 @@ export const GRID_COLUMNS: GridColumnDef[] = [
   { col: 'H', id: 'liquidVolumeMl', label: 'حجم مایع', width: 'min-w-[145px]', align: 'center', type: 'select',
     options: ['', '2 ml', '3 ml', '4.5 ml', '5 ml', '10 ml', '15 ml', '30 ml', '60 ml', '100 ml', '120 ml']
   },
-  { col: 'I', id: 'batteryCapacityMah', label: 'حجم باتری (mAh)', width: 'min-w-[130px]', align: 'center', type: 'number' },
+  { col: 'I', id: 'batteryCapacityMah', label: 'حجم باتری', width: 'min-w-[130px]', align: 'center', type: 'number' },
   { col: 'J', id: 'resistanceOhm', label: 'مقاومت (Ω)', width: 'min-w-[125px]', align: 'center', type: 'select',
     options: ['', '0.15 Ω', '0.2 Ω', '0.4 Ω', '0.6 Ω', '0.8 Ω', '1.0 Ω', '1.2 Ω']
   },

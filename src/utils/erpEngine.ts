@@ -3,6 +3,12 @@ import type {
   ShareholderRuleSnapshot,
 } from '../data/erpSeedData';
 
+let uniqueIdCounter = 0;
+export function generateUniqueId(prefix = 'id'): string {
+  uniqueIdCounter = (uniqueIdCounter + 1) % 1000000;
+  return `${prefix}-${Date.now()}-${uniqueIdCounter}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 export interface JournalLine {
   id: string;
   accountCode: string;
@@ -1177,7 +1183,7 @@ export function computeTrialBalance6Col(
     return false;
   };
 
-  const entries = glEntries ?? [];
+  const entries = (glEntries ?? []).filter((entry) => !entry.isCancelled);
   const periodEntries = entries.filter(
     (entry) => !normalizedFiscalYear || getEntryYear(entry.postingDate) === normalizedFiscalYear
   );

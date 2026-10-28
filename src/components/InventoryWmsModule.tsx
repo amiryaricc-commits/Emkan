@@ -324,7 +324,9 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
     const targetWh = (pLine?.warehouseKey || 'vitrine') as WarehouseKey;
     if (pInv) {
       setBreakdownRows(
-        Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx, targetWh))
+        Array.from({ length: 30 }, (_, idx) =>
+          createEmptyBreakdownRow(idx, pLine?.unitPrice || 0, pLine?.itemName || '', targetWh)
+        )
       );
       onShowToast(
         pLine

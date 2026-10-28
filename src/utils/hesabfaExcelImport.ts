@@ -517,8 +517,23 @@ export function buildHesabfaPayloadFromExcelRows(
         netLineAmount: lineAmount,
         valuationRate: 0,
       });
+      const prevMeta = (existingInvoice as unknown as { _rawPaidList?: number[]; _lineAmounts?: number[] });
+      const rawPaidList = [...(prevMeta._rawPaidList || [existingInvoice.paidAmount]), paidAmount];
+      const lineAmounts = [...(prevMeta._lineAmounts || [existingInvoice.totalAmount]), lineAmount];
+      prevMeta._rawPaidList = rawPaidList;
+      prevMeta._lineAmounts = lineAmounts;
+
       existingInvoice.totalAmount += lineAmount;
-      existingInvoice.paidAmount = Math.max(existingInvoice.paidAmount, paidAmount);
+      const sumPaid = rawPaidList.reduce((acc, v) => acc + v, 0);
+      const allEqual = rawPaidList.every((v) => v === rawPaidList[0]);
+      const isRepeatedHeaderPaid =
+        allEqual &&
+        rawPaidList.length > 1 &&
+        (rawPaidList[0] > Math.min(...lineAmounts) || sumPaid > existingInvoice.totalAmount);
+      existingInvoice.paidAmount = Math.min(
+        existingInvoice.totalAmount,
+        isRepeatedHeaderPaid ? rawPaidList[0] : sumPaid
+      );
       if (productName && !existingInvoice.itemsSummary.includes(productName)) {
         existingInvoice.itemsSummary = `${existingInvoice.itemsSummary}، ${productName}`;
       }
@@ -531,7 +546,7 @@ export function buildHesabfaPayloadFromExcelRows(
               : 'اقساطی فعال';
       }
     } else {
-      invoicesByNumber.set(invoiceNo, {
+      const initialInv: SalesInvoiceRecord & { _rawPaidList?: number[]; _lineAmounts?: number[] } = {
         id: `hesabfa-invoice-${invoiceNo}`,
         invoiceNo,
         docstatus: isDraft ? 0 : 1,
@@ -570,9 +585,18 @@ export function buildHesabfaPayloadFromExcelRows(
             valuationRate: 0,
           },
         ],
-      });
+        _rawPaidList: [paidAmount],
+        _lineAmounts: [lineAmount],
+      };
+      invoicesByNumber.set(invoiceNo, initialInv);
     }
   });
+
+  for (const inv of invoicesByNumber.values()) {
+    const meta = inv as unknown as { _rawPaidList?: number[]; _lineAmounts?: number[] };
+    delete meta._rawPaidList;
+    delete meta._lineAmounts;
+  }
 
   if (validationErrors.length > 0) {
     throw new HesabfaValidationReportError(validationErrors);

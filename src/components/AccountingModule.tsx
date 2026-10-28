@@ -393,9 +393,17 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
           exactAdd(sum, invoice.returnAgainst ? -invoice.totalAmount : invoice.totalAmount),
         0
       );
+    const getJournalExpenseAmount = (j: JournalEntryRecord) => {
+      if (j.lines && j.lines.length > 0) {
+        return j.lines
+          .filter((l) => String(l.accountCode || '').startsWith('5'))
+          .reduce((sum, l) => exactAdd(sum, exactSub(l.debit || 0, l.credit || 0)), 0);
+      }
+      return j.expenseCategory ? j.totalDebit : 0;
+    };
     const totalDailyExpenses = journalEntries
       .filter((j) => j.docstatus === 1)
-      .reduce((s, j) => exactAdd(s, j.totalDebit), 0);
+      .reduce((s, j) => exactAdd(s, getJournalExpenseAmount(j)), 0);
     const totalMonthlyFixed = monthlyExpenseLedger.reduce((s, m) => exactAdd(s, m.amount), 0);
 
     const p1 = shareholders[0];
@@ -418,14 +426,16 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
       );
     }
     for (const expense of journalEntries.filter((entry) => entry.docstatus === 1)) {
+      const expAmt = getJournalExpenseAmount(expense);
+      if (expAmt === 0) continue;
       const rates = ratesAt(expense.postingDate);
       profitAllocations[0] = exactSub(
         profitAllocations[0],
-        Math.round((expense.totalDebit * rates.partner1ProfitPct) / 100)
+        Math.round((expAmt * rates.partner1ProfitPct) / 100)
       );
       profitAllocations[1] = exactSub(
         profitAllocations[1],
-        Math.round((expense.totalDebit * rates.partner2ProfitPct) / 100)
+        Math.round((expAmt * rates.partner2ProfitPct) / 100)
       );
     }
     for (const expense of monthlyExpenseLedger) {
@@ -468,12 +478,24 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
       .filter((d) => d.partnerId === p2?.id)
       .reduce((sum, d) => exactAdd(sum, d.amount || 0), 0);
 
+    const unrealizedCreditSales = activeSales.reduce(
+      (sum, invoice) =>
+        exactAdd(
+          sum,
+          invoice.returnAgainst
+            ? 0
+            : Math.max(0, invoice.totalAmount - invoice.paidAmount - (invoice.creditedAmount ?? 0))
+        ),
+      0
+    );
+
     const result = calculateThreeBucketShareholderState({
       initialInventoryCapital: initialInventoryCapitalBaseline,
       totalRevenue: totalSalesRevenue,
       totalCogs,
       totalOperatingExpenses: totalDailyExpenses + totalMonthlyFixed,
       totalNewPurchasesAmount: totalPurchases,
+      unrealizedCreditSales,
       partners: [
         {
           id: p1?.id || 'sh-1',
@@ -1974,9 +1996,7 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
                             type="button"
                             title="ابطال سند و برگشت مبالغ به حساب‌ها"
                             onClick={() => {
-                              if (confirm(`آیا از ابطال سند «${je.voucherNo}» اطمینان دارید؟ مبالغ به حساب‌های مربوطه برگشت داده خواهند شد.`)) {
-                                onCancelJournalEntry(je.id);
-                              }
+                              onCancelJournalEntry(je.id);
                             }}
                             className="p-1 px-2.5 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-[11px] font-semibold transition-colors cursor-pointer"
                           >

@@ -1183,7 +1183,7 @@ export function computeTrialBalance6Col(
     return false;
   };
 
-  const entries = (glEntries ?? []).filter((entry) => !entry.isCancelled);
+  const entries = glEntries ?? [];
   const periodEntries = entries.filter(
     (entry) => !normalizedFiscalYear || getEntryYear(entry.postingDate) === normalizedFiscalYear
   );
@@ -1486,9 +1486,9 @@ export function restoreStockWithBundles<
     const restoredQty = quantityBySku.get(item.sku) || 0;
     if (restoredQty <= 0) return item;
     let updatedWarehouseStock: Record<string, number> | undefined;
+    const whRestores = quantityBySkuAndWh.get(item.sku);
     if (item.warehouseStock) {
       updatedWarehouseStock = { ...item.warehouseStock };
-      const whRestores = quantityBySkuAndWh.get(item.sku);
       if (whRestores) {
         for (const [whKey, whQty] of whRestores.entries()) {
           updatedWarehouseStock[whKey] = (updatedWarehouseStock[whKey] || 0) + whQty;
@@ -1497,14 +1497,45 @@ export function restoreStockWithBundles<
         updatedWarehouseStock.vitrine = (updatedWarehouseStock.vitrine || 0) + restoredQty;
       }
     }
+    const itemRecord = item as unknown as {
+      sector?: 'vape' | 'pc';
+      valuationRate?: number;
+      fifoLayers?: { qty: number; unitCost: number; date: string; sourceVoucherId?: string }[];
+      warehouseFifoLayers?: Record<
+        string,
+        { qty: number; unitCost: number; date: string; sourceVoucherId?: string }[]
+      >;
+    };
+    let updatedFifoLayers = itemRecord.fifoLayers;
+    let updatedWarehouseFifoLayers = itemRecord.warehouseFifoLayers;
+    if (itemRecord.sector === 'pc') {
+      const unitCost = itemRecord.valuationRate || 0;
+      const returnDate = formatPersianDate(new Date());
+      updatedFifoLayers = [
+        ...(itemRecord.fifoLayers || []),
+        { qty: restoredQty, unitCost, date: returnDate, sourceVoucherId: 'POS-RETURN' },
+      ];
+      if (itemRecord.warehouseFifoLayers && whRestores) {
+        updatedWarehouseFifoLayers = { ...itemRecord.warehouseFifoLayers };
+        for (const [whKey, whQty] of whRestores.entries()) {
+          updatedWarehouseFifoLayers[whKey] = [
+            ...(updatedWarehouseFifoLayers[whKey] || []),
+            { qty: whQty, unitCost, date: returnDate, sourceVoucherId: 'POS-RETURN' },
+          ];
+        }
+      }
+    }
     return {
       ...item,
       stockQty: item.stockQty + restoredQty,
       ...(updatedWarehouseStock ? { warehouseStock: updatedWarehouseStock } : {}),
+      ...(updatedFifoLayers ? { fifoLayers: updatedFifoLayers } : {}),
+      ...(updatedWarehouseFifoLayers ? { warehouseFifoLayers: updatedWarehouseFifoLayers } : {}),
     };
   });
 
-  for (const [sku, returnedMl] of decantMlBySku) {
+  for (const [rawSku, returnedMl] of decantMlBySku) {
+    const sku = rawSku.startsWith('decant_') ? rawSku.slice('decant_'.length) : rawSku;
     const itemIndex = restoredInventory.findIndex((item) => item.sku === sku);
     const item = restoredInventory[itemIndex];
     if (!item) continue;
@@ -1679,7 +1710,9 @@ export function calculateThreeBucketShareholderState(params: {
     // W_i = (Net Profit * P_i) + Personal Capital Injected_i - Withdrawals_i
     const walletBalance = preProfitPosition + profitAllocated;
     const realizedProfitAllocated =
-      partner.profitAllocationOverride ?? Math.round(realizedNetProfit * pi);
+      partner.profitAllocationOverride !== undefined
+        ? partner.profitAllocationOverride - Math.round(unrealizedCredit * pi)
+        : Math.round(realizedNetProfit * pi);
     const maxRealizedWithdrawable = Math.max(0, preProfitPosition + realizedProfitAllocated);
     const withdrawableBalance = Math.min(Math.max(0, walletBalance), maxRealizedWithdrawable);
 
@@ -1733,6 +1766,7 @@ export interface VoidableInvoiceInput {
   status: string;
   totalAmount: number;
   paidAmount?: number;
+  usedCreditBalance?: number;
   cogsAmount?: number;
   serviceAmount?: number;
   paymentAccountCode?: string;
@@ -1792,7 +1826,8 @@ export function voidInvoice<
 } {
   const { invoice, invoiceType, inventory } = params;
   const paid = Math.max(0, invoice.paidAmount ?? 0);
-  const unpaid = Math.max(0, invoice.totalAmount - paid);
+  const usedCredit = Math.max(0, invoice.usedCreditBalance ?? 0);
+  const unpaid = Math.max(0, invoice.totalAmount - paid - usedCredit);
   const reversalLedgerLines: { accountCode: string; debit: number; credit: number }[] = [];
   let restoredInventory = [...inventory];
   let errorMessage: string | undefined;
@@ -1906,6 +1941,14 @@ export function voidInvoice<
         accountCode: invoice.paymentAccountCode || '110101',
         debit: 0,
         credit: paid,
+      });
+    }
+    // 2b. Reverse Customer Prepayment/Wallet Credit used (Credit 2102)
+    if (usedCredit > 0) {
+      reversalLedgerLines.push({
+        accountCode: '2102',
+        debit: 0,
+        credit: usedCredit,
       });
     }
     // 3. Reverse Accounts Receivable (Credit 1102)

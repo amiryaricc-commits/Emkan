@@ -48,6 +48,8 @@ export const createEmptyPurchaseLine = (index: number): PurchaseInvoiceLineGridI
   notes: '',
 });
 
+export const createEmptyPurchaseRow = createEmptyPurchaseLine;
+
 export interface PurchaseGridColumnDef {
   col: string; // A, B, C...
   id: keyof PurchaseInvoiceLineGridItem | 'lineTotal' | 'netLineAmount';
@@ -787,14 +789,13 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
           if (match.condition) next.itemCondition = match.condition;
           if (match.valuationRate) next.unitCost = match.valuationRate;
           next.notes = match.sku;
-        } else if (onAddMasterOption) {
-          onAddMasterOption('tags', String(val).trim());
         }
       }
 
       return next;
     });
 
+    pushHistoryState(updated);
     onChangeLines(updated);
   };
 
@@ -967,6 +968,19 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
     rowIdx: number,
     colIdx: number
   ) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) handleRedo();
+      else handleUndo();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      e.stopPropagation();
+      handleRedo();
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       setIsEditing(false);

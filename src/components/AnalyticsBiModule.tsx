@@ -187,9 +187,17 @@ export const AnalyticsBiModule: React.FC<AnalyticsBiModuleProps> = ({
     }
 
     // Operating expenses (Journal Entries + Locked Monthly Expense Ledger)
+    const getJournalExpenseAmount = (j: JournalEntryRecord) => {
+      if (j.lines && j.lines.length > 0) {
+        return j.lines
+          .filter((l) => String(l.accountCode || '').startsWith('5'))
+          .reduce((sum, l) => sum + ((l.debit || 0) - (l.credit || 0)), 0);
+      }
+      return j.expenseCategory ? j.totalDebit : 0;
+    };
     const journalExp = journalEntries
       .filter((j) => j.docstatus === 1)
-      .reduce((sum, j) => sum + j.totalDebit, 0);
+      .reduce((sum, j) => sum + getJournalExpenseAmount(j), 0);
     const fixedExp = monthlyExpenses.reduce((sum, m) => sum + m.amount, 0);
     const totalOperatingExpenses = journalExp + fixedExp;
 
@@ -339,11 +347,20 @@ export const AnalyticsBiModule: React.FC<AnalyticsBiModuleProps> = ({
     // Collect daily expenses from journal entries
     for (const j of journalEntries) {
       if (j.docstatus !== 1 || !j.postingDate) continue;
+      const expAmt =
+        j.lines && j.lines.length > 0
+          ? j.lines
+              .filter((l) => String(l.accountCode || '').startsWith('5'))
+              .reduce((sum, l) => sum + ((l.debit || 0) - (l.credit || 0)), 0)
+          : j.expenseCategory
+            ? j.totalDebit || 0
+            : 0;
+      if (expAmt <= 0) continue;
       const d = j.postingDate;
       const prev = dailyMap.get(d) || { sales: 0, expenses: 0, salesCount: 0, expenseCount: 0 };
       dailyMap.set(d, {
         ...prev,
-        expenses: prev.expenses + (j.totalDebit || 0),
+        expenses: prev.expenses + expAmt,
         expenseCount: prev.expenseCount + 1,
       });
     }

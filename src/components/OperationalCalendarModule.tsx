@@ -227,6 +227,7 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
     });
 
     // 3. Monthly Fixed Expense Templates
+    const currentYm = (selectedDate || formatPersianDate(new Date())).slice(0, 7) || '۱۴۰۴/۰۸';
     recurringTemplates.forEach((tmpl) => {
       const dayPadded = new Intl.NumberFormat('fa-IR', { minimumIntegerDigits: 2 }).format(
         tmpl.dueDayOfMonth
@@ -234,7 +235,7 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
       autoEvents.push({
         id: `auto-tmpl-${tmpl.id}`,
         title: `موعد پرداخت: ${tmpl.name}`,
-        date: `۱۴۰۴/۰۸/${dayPadded}`,
+        date: `${currentYm}/${dayPadded}`,
         time: '10:00',
         category: 'fixed_expense',
         amount: tmpl.defaultMonthlyAmount,
@@ -261,7 +262,7 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
     });
 
     return [...events, ...autoEvents];
-  }, [events, purchaseInvoices, salesInvoices, recurringTemplates, wishlist]);
+  }, [events, purchaseInvoices, salesInvoices, recurringTemplates, wishlist, selectedDate]);
 
   const filteredEvents = useMemo(() => {
     return combinedEvents.filter((ev) =>
@@ -309,7 +310,60 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
     setWishNotes('');
   };
 
-  // Generate 30 days of current Persian month (آبان ۱۴۰۴)
+  const activeYearMonth = useMemo(
+    () => (selectedDate || formatPersianDate(new Date())).slice(0, 7) || '۱۴۰۴/۰۸',
+    [selectedDate]
+  );
+
+  const activeMonthTitle = useMemo(() => {
+    const persianToEn = (s: string) =>
+      s.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+    const [yrStr, moStr] = activeYearMonth.split('/');
+    const monthNames = [
+      'فروردین',
+      'اردیبهشت',
+      'خرداد',
+      'تیر',
+      'مرداد',
+      'شهریور',
+      'مهر',
+      'آبان',
+      'آذر',
+      'دی',
+      'بهمن',
+      'اسفند',
+    ];
+    const mIdx = Math.max(0, Math.min(11, (Number(persianToEn(moStr || '8')) || 8) - 1));
+    return {
+      monthName: monthNames[mIdx],
+      fullTitle: `${monthNames[mIdx]} ${yrStr || '۱۴۰۴'}`,
+    };
+  }, [activeYearMonth]);
+
+  const handleShiftMonth = (delta: number) => {
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const toPersian = (n: number, pad = 2) =>
+      String(n)
+        .padStart(pad, '0')
+        .replace(/\d/g, (d) => persianDigits[Number(d)]);
+    const persianToEn = (s: string) =>
+      s.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+    const [yrStr, moStr] = activeYearMonth.split('/');
+    let yr = Number(persianToEn(yrStr || '1404')) || 1404;
+    let mo = Number(persianToEn(moStr || '8')) || 8;
+    mo += delta;
+    if (mo > 12) {
+      mo = 1;
+      yr += 1;
+    } else if (mo < 1) {
+      mo = 12;
+      yr -= 1;
+    }
+    const nextDate = `${toPersian(yr, 4)}/${toPersian(mo, 2)}/۰۱`;
+    setSelectedDate(nextDate);
+  };
+
+  // Generate 30 days of active Persian month
   const monthDays = useMemo(() => {
     const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
     const toPersian = (n: number) =>
@@ -318,11 +372,11 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
         .replace(/\d/g, (d) => persianDigits[Number(d)]);
     return Array.from({ length: 30 }, (_, idx) => {
       const dayNum = idx + 1;
-      const dateStr = `۱۴۰۴/۰۸/${toPersian(dayNum)}`;
+      const dateStr = `${activeYearMonth}/${toPersian(dayNum)}`;
       const dayEvents = filteredEvents.filter((ev) => ev.date === dateStr);
       return { dayNum, dayLabel: toPersian(dayNum), dateStr, dayEvents };
     });
-  }, [filteredEvents]);
+  }, [filteredEvents, activeYearMonth]);
 
   return (
     <div className="space-y-6">
@@ -548,7 +602,21 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
           <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-black text-slate-900">آبان ۱۴۰۴</span>
+                <button
+                  type="button"
+                  onClick={() => handleShiftMonth(-1)}
+                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[11px] font-bold text-slate-700"
+                >
+                  ماه قبل
+                </button>
+                <span className="text-sm font-black text-slate-900">{activeMonthTitle.fullTitle}</span>
+                <button
+                  type="button"
+                  onClick={() => handleShiftMonth(1)}
+                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[11px] font-bold text-slate-700"
+                >
+                  ماه بعد
+                </button>
                 {selectedCategory !== 'all' && (
                   <button
                     type="button"
@@ -606,7 +674,7 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-slate-700 tabular-nums">
-                            {day.dayLabel} آبان
+                            {day.dayLabel} {activeMonthTitle.monthName}
                           </span>
                           {day.dayEvents.length > 0 && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-900 text-white tabular-nums">

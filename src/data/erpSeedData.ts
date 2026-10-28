@@ -121,6 +121,7 @@ export interface SalesInvoiceRecord {
   totalAmount: number;
   netAmount?: number;
   paidAmount: number;
+  usedCreditBalance?: number;
   discountAmount?: number;
   creditedAmount?: number;
   returnAgainst?: string;
@@ -143,6 +144,8 @@ export interface PurchaseInvoiceRecord {
   supplierName: string;
   date: string;
   warehouse: string;
+  warehouseKey?: WarehouseKey;
+  inventoryAccountCode?: string;
   branchDimension?: string;
   costCenter?: string;
   status:
@@ -443,7 +446,7 @@ export interface CrmLeadRecord {
   id: string;
   fullName: string;
   phone: string;
-  source: 'اینستاگرام' | 'تلگرام' | 'تماس تلفنی' | 'مراجعه حضوری' | 'کمپین اینفلوئنسر';
+  source: 'اینستاگرام' | 'تلگرام' | 'تماس تلفنی' | 'مراجعه حضوری' | 'کمپین اینفلوئنسر' | 'وبسایت';
   campaignName: string;
   interestStyle: 'سبک MTL (سیگاری)' | 'سبک DTL (قلیانی)' | 'همکار عمده‌فروش';
   stage: 'لید جدید' | 'در حال مذاکره' | 'ارسال پیش‌فاکتور' | 'مشتری وفادار';
@@ -549,12 +552,21 @@ export interface TimeMachineSnapshotRecord {
   masterOptions?: MasterOptionsRegistry;
   categorySectors?: Record<string, 'vape' | 'pc'>;
   shareholderSnapshots?: ShareholderRuleSnapshot[];
+  shareholderDrawings?: ShareholderDrawingRecord[];
   monthlyExpenseLedger?: MonthlyExpenseLedgerRecord[];
   stockLedgerEntries?: StockLedgerEntryRecord[];
   theftFraudIncidents?: TheftFraudIncidentRecord[];
   calendarEvents?: OperationalCalendarEvent[];
   customerWishlist?: CustomerWishlistRecord[];
   recurringTemplates?: RecurringExpenseTemplate[];
+  paymentEntries?: PaymentEntryRecord[];
+  fixedAssets?: FixedAssetRecord[];
+  costCenters?: CostCenterRecord[];
+  crmLeads?: CrmLeadRecord[];
+  promotionRules?: PromotionRuleRecord[];
+  warehouses?: WarehouseRecord[];
+  bulkSmsPool?: BulkSmsContactRecord[];
+  branches?: string[];
 }
 
 export interface IncidentItemLine {

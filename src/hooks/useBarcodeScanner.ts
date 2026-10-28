@@ -11,6 +11,20 @@ interface UseBarcodeScannerOptions {
  * Hardware barcode scanner listener that detects rapid keystroke bursts ending with Enter
  * without interfering with normal user typing inside standard form inputs.
  */
+const PERSIAN_TO_ENGLISH_KEY_MAP: Record<string, string> = {
+  ض: 'q', ص: 'w', ث: 'e', ق: 'r', ف: 't', غ: 'y', ع: 'u', ه: 'i', خ: 'o', ح: 'p', ج: '[', چ: ']',
+  ش: 'a', س: 's', ی: 'd', ي: 'd', ب: 'f', ل: 'g', ا: 'h', ت: 'j', ن: 'k', م: 'l', ک: ';', گ: "'",
+  ظ: 'z', ط: 'x', ز: 'c', ر: 'v', ذ: 'b', د: 'n', پ: 'm', و: ',',
+  '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4', '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+  '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+};
+
+function normalizeScannedBarcode(raw: string): string {
+  return Array.from(raw.trim())
+    .map((ch) => PERSIAN_TO_ENGLISH_KEY_MAP[ch] ?? ch)
+    .join('');
+}
+
 export function useBarcodeScanner({
   enabled = true,
   onScan,
@@ -52,7 +66,7 @@ export function useBarcodeScanner({
       if (event.key === 'Enter') {
         if (bufferRef.current.length >= minLength) {
           event.preventDefault();
-          const scannedCode = bufferRef.current.trim();
+          const scannedCode = normalizeScannedBarcode(bufferRef.current);
           bufferRef.current = '';
           const previousScan = lastScanRef.current;
           if (

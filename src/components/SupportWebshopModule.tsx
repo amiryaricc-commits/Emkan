@@ -14,6 +14,7 @@ interface SupportWebshopModuleProps {
   inventoryItems: InventoryItemRecord[];
   salesInvoices: SalesInvoiceRecord[];
   onWebshopOrderCheckout: (item: InventoryItemRecord) => void;
+  onAddLead?: (lead: { customerName: string; company: string; expectedValue: number }) => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -22,6 +23,7 @@ export const SupportWebshopModule: React.FC<SupportWebshopModuleProps> = ({
   inventoryItems,
   salesInvoices,
   onWebshopOrderCheckout,
+  onAddLead,
   onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<'webshop' | 'portal' | 'builder'>('webshop');
@@ -292,6 +294,11 @@ export const SupportWebshopModule: React.FC<SupportWebshopModuleProps> = ({
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!agencyApplicant.trim()) return;
+                onAddLead?.({
+                  customerName: agencyApplicant.trim(),
+                  company: agencyCity.trim() ? `نمایندگی (${agencyCity.trim()})` : 'درخواست نمایندگی وب‌شاپ',
+                  expectedValue: 0,
+                });
                 setSubmittedWebFormsCount((c) => c + 1);
                 setAgencyApplicant('');
                 setAgencyCity('');

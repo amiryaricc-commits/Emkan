@@ -87,6 +87,7 @@ import {
   voidInvoice,
   computeSnapshotChecksum,
   exactAdd,
+  exactSub,
   exactMul,
   JournalLine,
   detectCategorySector,
@@ -677,12 +678,21 @@ export function App() {
       masterOptions: structuredClone(masterOptions),
       categorySectors: structuredClone(categorySectors),
       shareholderSnapshots: structuredClone(shareholderSnapshots),
+      shareholderDrawings: structuredClone(shareholderDrawings),
       monthlyExpenseLedger: structuredClone(monthlyExpenseLedger),
       stockLedgerEntries: structuredClone(stockLedgerEntries),
       theftFraudIncidents: structuredClone(theftFraudIncidents),
       calendarEvents: structuredClone(calendarEvents),
       customerWishlist: structuredClone(customerWishlist),
       recurringTemplates: structuredClone(recurringTemplates),
+      paymentEntries: structuredClone(paymentEntries),
+      fixedAssets: structuredClone(fixedAssets),
+      costCenters: structuredClone(costCenters),
+      crmLeads: structuredClone(crmLeads),
+      promotionRules: structuredClone(promotionRules),
+      warehouses: structuredClone(warehouses),
+      bulkSmsPool: structuredClone(bulkSmsPool),
+      branches: structuredClone(branches),
     };
   };
 
@@ -734,6 +744,9 @@ export function App() {
     if (snap.shareholderSnapshots) {
       setShareholderSnapshots(snap.shareholderSnapshots);
     }
+    if (snap.shareholderDrawings) {
+      setShareholderDrawings(snap.shareholderDrawings);
+    }
     if (snap.monthlyExpenseLedger) {
       setMonthlyExpenseLedger(snap.monthlyExpenseLedger);
     }
@@ -751,6 +764,30 @@ export function App() {
     }
     if (snap.recurringTemplates) {
       setRecurringTemplates(snap.recurringTemplates);
+    }
+    if (snap.paymentEntries) {
+      setPaymentEntries(snap.paymentEntries);
+    }
+    if (snap.fixedAssets) {
+      setFixedAssets(snap.fixedAssets);
+    }
+    if (snap.costCenters) {
+      setCostCenters(snap.costCenters);
+    }
+    if (snap.crmLeads) {
+      setCrmLeads(snap.crmLeads);
+    }
+    if (snap.promotionRules) {
+      setPromotionRules(snap.promotionRules);
+    }
+    if (snap.warehouses) {
+      setWarehouses(snap.warehouses);
+    }
+    if (snap.bulkSmsPool) {
+      setBulkSmsPool(snap.bulkSmsPool);
+    }
+    if (snap.branches) {
+      setBranches(snap.branches);
     }
     setCurrentSnapshotIndex(idx);
     // Trigger full state rehydration across all mounted components and open tabs
@@ -990,6 +1027,14 @@ export function App() {
     let pcCogs = 0;
     let vapeRev = 0;
     let pcRev = 0;
+    const cogsByWhAccount: Record<string, number> = {};
+    const POS_WH_ACC_MAP: Record<string, string> = {
+      vitrine: '110401',
+      shop_storage: '110402',
+      central_external: '110403',
+      consignment: '110404',
+      in_transit: '110405',
+    };
     const newStockLedgerRows: StockLedgerEntryRecord[] = [];
     const maxPosSeq = salesInvoices.reduce((max, s) => {
       const m = s.invoiceNo.match(/(\d+)$/);
@@ -1086,6 +1131,7 @@ export function App() {
         }
 
         vapeCogs = exactAdd(vapeCogs, decantRes.lineCogs);
+        cogsByWhAccount['110401'] = exactAdd(cogsByWhAccount['110401'] || 0, decantRes.lineCogs);
         vapeRev = exactAdd(vapeRev, exactMul(line.qty, line.finalManualUnitPrice));
 
         newStockLedgerRows.push({
@@ -1109,6 +1155,10 @@ export function App() {
           return false;
         }
         const whKey = line.warehouseKey || 'vitrine';
+        const lineWhAcc =
+          warehouses.find((w) => w.key === whKey)?.accountCode ||
+          POS_WH_ACC_MAP[whKey] ||
+          '110401';
         const currWhStock = { ...(item.warehouseStock || {}) };
         currWhStock[whKey] = Math.max(0, (currWhStock[whKey] ?? item.stockQty) - line.qty);
 
@@ -1122,6 +1172,7 @@ export function App() {
               item.warehouseValuationRates?.[whKey] ?? item.valuationRate ?? 0,
           });
           pcCogs = exactAdd(pcCogs, fifo.totalCogs);
+          cogsByWhAccount[lineWhAcc] = exactAdd(cogsByWhAccount[lineWhAcc] || 0, fifo.totalCogs);
           pcRev = exactAdd(pcRev, exactMul(line.qty, line.finalManualUnitPrice));
           const nextStock = item.stockQty - line.qty;
           updatedInventory[idx] = {
@@ -1154,6 +1205,7 @@ export function App() {
             item.warehouseValuationRates?.[whKey] ?? item.valuationRate ?? 0;
           const lineCogs = exactMul(line.qty, whUnitRate);
           vapeCogs = exactAdd(vapeCogs, lineCogs);
+          cogsByWhAccount[lineWhAcc] = exactAdd(cogsByWhAccount[lineWhAcc] || 0, lineCogs);
           vapeRev = exactAdd(vapeRev, exactMul(line.qty, line.finalManualUnitPrice));
           const nextStock = item.stockQty - line.qty;
           updatedInventory[idx] = {
@@ -1361,10 +1413,31 @@ export function App() {
       });
     }
     const totalPhysicalCogs = exactAdd(exactAdd(vapeCogs, pcCogs), actualConsumableInventoryCogs);
+    if (actualConsumableInventoryCogs > 0) {
+      cogsByWhAccount['110401'] = exactAdd(
+        cogsByWhAccount['110401'] || 0,
+        actualConsumableInventoryCogs
+      );
+    }
     if (totalPhysicalCogs > 0) {
+      ledgerLines.push({ accountCode: '5101', debit: totalPhysicalCogs, credit: 0 });
+      const whEntries = Object.entries(cogsByWhAccount).filter(([, amt]) => amt > 0);
+      if (whEntries.length > 0) {
+        for (const [whAcc, amt] of whEntries) {
+          ledgerLines.push({ accountCode: whAcc, debit: 0, credit: amt });
+        }
+      } else {
+        ledgerLines.push({ accountCode: '110401', debit: 0, credit: totalPhysicalCogs });
+      }
+    }
+    const nonPhysicalConsumableCogs = Math.max(
+      0,
+      exactSub(serviceConsumableCogs, actualConsumableInventoryCogs)
+    );
+    if (nonPhysicalConsumableCogs > 0) {
       ledgerLines.push(
-        { accountCode: '5101', debit: totalPhysicalCogs, credit: 0 },
-        { accountCode: '110401', debit: 0, credit: totalPhysicalCogs }
+        { accountCode: '5102', debit: nonPhysicalConsumableCogs, credit: 0 },
+        { accountCode: '2104', debit: 0, credit: nonPhysicalConsumableCogs }
       );
     }
 
@@ -1518,14 +1591,35 @@ export function App() {
 
     const netRefundAmount = Math.max(0, grossReturnAmount - totalRestockingFee);
 
-    // Calculate COGS to reverse
+    // Calculate COGS to reverse (handling decant ml vs full bottle valuationRate)
+    const WH_ACC_MAP: Record<string, string> = {
+      vitrine: '110401',
+      shop_storage: '110402',
+      central_external: '110403',
+      consignment: '110404',
+      in_transit: '110405',
+    };
+    const cogsByWhAccount = new Map<string, number>();
     const cogsReverse = itemsToReturn.reduce((sum, item) => {
-      const origLine = inv.lines?.find((l) => l.sku === item.sku);
-      const rate =
-        origLine?.valuationRate ||
-        inventoryItems.find((i) => i.sku === item.sku)?.valuationRate ||
-        0;
-      return sum + Math.round(item.qty * rate);
+      const origLine = inv.lines?.find(
+        (l) => (item.lineId && l.id === item.lineId) || l.sku === item.sku
+      );
+      const invItem = inventoryItems.find((i) => i.sku === item.sku);
+      let rate = origLine?.valuationRate ?? 0;
+      if (!rate && invItem) {
+        if (item.isDecantMl) {
+          const bottleVol = invItem.bottleVolumeMl || invItem.liquidVolumeMl || 60;
+          rate = bottleVol > 0 ? Math.round((invItem.valuationRate || 0) / bottleVol) : 0;
+        } else {
+          rate = invItem.valuationRate || 0;
+        }
+      }
+      const lineCogs = Math.round(item.qty * rate);
+      if (lineCogs > 0) {
+        const whAcc = WH_ACC_MAP[item.warehouseKey || origLine?.warehouseKey || 'vitrine'] || '110401';
+        cogsByWhAccount.set(whAcc, (cogsByWhAccount.get(whAcc) || 0) + lineCogs);
+      }
+      return sum + lineCogs;
     }, 0);
 
     // Double-entry ledger lines
@@ -1568,10 +1662,10 @@ export function App() {
     }
 
     if (cogsReverse > 0) {
-      ledgerLines.push(
-        { accountCode: '110401', debit: cogsReverse, credit: 0 },
-        { accountCode: '5101', debit: 0, credit: cogsReverse }
-      );
+      for (const [whAcc, amt] of cogsByWhAccount.entries()) {
+        ledgerLines.push({ accountCode: whAcc, debit: amt, credit: 0 });
+      }
+      ledgerLines.push({ accountCode: '5101', debit: 0, credit: cogsReverse });
     }
 
     // Post double entries to accounts
@@ -1637,19 +1731,32 @@ export function App() {
       discountAmount: totalRestockingFee,
       cogsAmount: cogsReverse,
       itemsSummary: `مرجوعی اقلام: ${itemsSummary}`,
-      lines: itemsToReturn.map((it, idx) => ({
-        id: it.lineId || `ret-line-${Date.now()}-${idx}`,
-        sku: it.sku,
-        itemName: it.itemName,
-        uom: 'عدد',
-        qty: it.qty,
-        unitPrice: it.unitPrice,
-        discountPercent: 0,
-        netLineAmount: it.qty * it.unitPrice - (it.restockingFee || 0),
-        valuationRate: inventoryItems.find((i) => i.sku === it.sku)?.valuationRate || 0,
-        sector: inventoryItems.find((i) => i.sku === it.sku)?.sector,
-        warehouseKey: it.warehouseKey,
-      })),
+      lines: itemsToReturn.map((it, idx) => {
+        const origLine = inv.lines?.find(
+          (l) => (it.lineId && l.id === it.lineId) || l.sku === it.sku
+        );
+        const invItem = inventoryItems.find((i) => i.sku === it.sku);
+        const bottleVol = invItem?.bottleVolumeMl || invItem?.liquidVolumeMl || 60;
+        const unitValRate =
+          origLine?.valuationRate ||
+          (it.isDecantMl && bottleVol > 0
+            ? Math.round((invItem?.valuationRate || 0) / bottleVol)
+            : invItem?.valuationRate || 0);
+        return {
+          id: it.lineId || `ret-line-${Date.now()}-${idx}`,
+          sku: it.sku,
+          itemName: it.itemName,
+          uom: it.isDecantMl ? 'میلی‌لیتر' : 'عدد',
+          qty: it.qty,
+          unitPrice: it.unitPrice,
+          discountPercent: 0,
+          netLineAmount: it.qty * it.unitPrice - (it.restockingFee || 0),
+          valuationRate: unitValRate,
+          isDecantMl: it.isDecantMl,
+          sector: invItem?.sector,
+          warehouseKey: it.warehouseKey,
+        };
+      }),
     };
 
     const nextInvoices = [returnInvoice, ...salesInvoices];
@@ -1743,17 +1850,39 @@ export function App() {
     }));
     const nextGl = [...reversalGl, ...glEntries];
 
+    const voidPaid = Math.max(0, inv.paidAmount ?? 0);
+    const voidUsedCredit = Math.max(0, inv.usedCreditBalance ?? 0);
+    const voidUnpaid = Math.max(0, inv.totalAmount - voidPaid - voidUsedCredit);
+    let nextCustomerContacts = customerContacts;
+    if ((voidUnpaid > 0 || voidUsedCredit > 0) && inv.customerName) {
+      nextCustomerContacts = customerContacts.map((c) => {
+        const isTarget = inv.customerId
+          ? c.id === inv.customerId
+          : c.fullName.trim() === inv.customerName.trim();
+        if (!isTarget) return c;
+        return {
+          ...c,
+          debitBalance: Math.max(0, (c.debitBalance ?? 0) - voidUnpaid),
+          creditBalance: (c.creditBalance ?? 0) + voidUsedCredit,
+        };
+      });
+    }
+
     void atomicCommitMultiStores([
       { storageKey: 'emkan.v4.accounts', value: nextAccounts },
       { storageKey: 'emkan.v1.inventory-items', value: nextInventory },
       { storageKey: 'emkan.v1.sales-invoices', value: nextInvoices },
       { storageKey: 'emkan.v1.gl-entries', value: nextGl },
+      { storageKey: 'emkan.v1.customer-contacts', value: nextCustomerContacts },
     ]);
 
     setInventoryItems(nextInventory);
     setAccounts(nextAccounts);
     setSalesInvoices(nextInvoices);
     setGlEntries(nextGl);
+    if ((voidUnpaid > 0 || voidUsedCredit > 0) && inv.customerName) {
+      setCustomerContacts(nextCustomerContacts);
+    }
     showToast(voidRes.auditSummary);
     recordAuditLog(
       'ابطال فاکتور فروش',
@@ -1786,8 +1915,25 @@ export function App() {
     const paid = pinv.paidAmount ?? 0;
     const unpaid = Math.max(0, pinv.totalAmount - paid);
     const freight = Math.max(0, pinv.freightAmount ?? 0);
+    const WH_ACC_MAP: Record<string, string> = {
+      vitrine: '110401',
+      shop_storage: '110402',
+      central_external: '110403',
+      consignment: '110404',
+      in_transit: '110405',
+    };
+    const matchedWarehouse = warehouses.find(
+      (w) =>
+        (pinv.warehouseKey && w.key === pinv.warehouseKey) ||
+        (pinv.warehouse && w.name === pinv.warehouse)
+    );
+    const purchaseInvAccCode =
+      pinv.inventoryAccountCode ||
+      matchedWarehouse?.accountCode ||
+      (pinv.warehouseKey ? WH_ACC_MAP[pinv.warehouseKey] : undefined) ||
+      '110403';
     const ledgerLines: { accountCode: string; debit: number; credit: number }[] = [
-      { accountCode: '110403', debit: pinv.totalAmount, credit: 0 },
+      { accountCode: purchaseInvAccCode, debit: pinv.totalAmount, credit: 0 },
     ];
     if (freight > 0) {
       ledgerLines.push({ accountCode: '5204', debit: freight, credit: 0 });
@@ -1799,11 +1945,13 @@ export function App() {
         credit: paid,
       });
     }
-    if (unpaid > 0) {
-      ledgerLines.push({ accountCode: '2101', debit: 0, credit: unpaid });
+    const isFreightOnCredit = freight > 0 && paid === 0 && !pinv.paymentAccountCode;
+    const totalPayableCredit = unpaid + (isFreightOnCredit ? freight : 0);
+    if (totalPayableCredit > 0) {
+      ledgerLines.push({ accountCode: '2101', debit: 0, credit: totalPayableCredit });
     }
-    if (freight > 0) {
-      // Freight is paid out from cash/bank
+    if (freight > 0 && !isFreightOnCredit) {
+      // Freight is paid out from cash/bank when a payment account or cash payment exists
       ledgerLines.push({
         accountCode: pinv.paymentAccountCode || '110102',
         debit: 0,
@@ -1812,7 +1960,14 @@ export function App() {
     }
 
     const nextAccounts = postDoubleEntryToAccounts(accounts, ledgerLines);
-    const nextPurchaseInvoices = [invoiceWithSupplierId, ...purchaseInvoices];
+    const nextPurchaseInvoices = [
+      {
+        ...invoiceWithSupplierId,
+        warehouseKey: pinv.warehouseKey || matchedWarehouse?.key,
+        inventoryAccountCode: purchaseInvAccCode,
+      },
+      ...purchaseInvoices,
+    ];
     const newGlEntries: GLEntryRecord[] = ledgerLines.map((l, index) => ({
       id: `gle-pinv-${pinv.id}-${index}-${Date.now()}`,
       postingDate: pinv.date,
@@ -1830,12 +1985,12 @@ export function App() {
     }));
     const nextGlEntries = [...newGlEntries, ...glEntries];
     let nextCustomerContacts = customerContacts;
-    if (unpaid > 0) {
+    if (totalPayableCredit > 0) {
       nextCustomerContacts = customerContacts.map((c) =>
         (invoiceWithSupplierId.supplierId
           ? c.id === invoiceWithSupplierId.supplierId
           : c.fullName.trim() === pinv.supplierName.trim())
-          ? { ...c, creditBalance: (c.creditBalance ?? 0) + unpaid }
+          ? { ...c, creditBalance: (c.creditBalance ?? 0) + totalPayableCredit }
           : c
       );
     }
@@ -2087,16 +2242,64 @@ export function App() {
 
     const todayStr = formatPersianDate(new Date());
 
+    // Warehouse account mapping for intake breakdown
+    const WH_MAP: Record<string, string> = {
+      vitrine: '110401',
+      shop_storage: '110402',
+      central_external: '110403',
+      consignment: '110404',
+      in_transit: '110405',
+    };
+
+    if (purchaseId && allocatedItems.length > 0) {
+      const parentPinv = purchaseInvoices.find((p) => p.id === purchaseId);
+      const sourceAcc =
+        parentPinv?.inventoryAccountCode ||
+        (parentPinv?.warehouseKey ? WH_MAP[parentPinv.warehouseKey] : undefined) ||
+        '110403';
+      const reclassLines: { accountCode: string; debit: number; credit: number }[] = [];
+      let totalReclass = 0;
+
+      for (const item of allocatedItems) {
+        const val = Math.round((item.stockQty || 0) * (item.valuationRate || 0));
+        const whKey = (Object.keys(item.warehouseStock || {})[0] || 'vitrine') as string;
+        const targetAcc = WH_MAP[whKey] || '110401';
+        if (val > 0 && targetAcc !== sourceAcc) {
+          reclassLines.push({ accountCode: targetAcc, debit: val, credit: 0 });
+          totalReclass += val;
+        }
+      }
+
+      if (totalReclass > 0) {
+        reclassLines.push({ accountCode: sourceAcc, debit: 0, credit: totalReclass });
+        const nextAccounts = postDoubleEntryToAccounts(accounts, reclassLines);
+        const vNo = `WH-ALLOC-${Date.now().toString().slice(-6)}`;
+        const newGles: GLEntryRecord[] = reclassLines.map((l, index) => ({
+          id: `gle-wh-alloc-${Date.now()}-${index}`,
+          postingDate: todayStr,
+          voucherType: 'Stock Entry' as any,
+          voucherNo: vNo,
+          accountCode: l.accountCode,
+          accountName: accounts.find((a) => a.code === l.accountCode)?.name || l.accountCode,
+          debit: l.debit,
+          credit: l.credit,
+          costCenter: 'CC-101',
+          branchDimension: defaultBranch,
+          remarks: `تخصیص انباری کالاهای پذیرش‌شده فاکتور ${billNoRef || purchaseId}`,
+          timestamp: Date.now() + index,
+        }));
+        setAccounts(nextAccounts);
+        setGlEntries((prev) => [...newGles, ...prev]);
+        void atomicCommitMultiStores([
+          { storageKey: 'emkan.v4.accounts', value: nextAccounts },
+          { storageKey: 'emkan.v1.gl-entries', value: [...newGles, ...glEntries] },
+        ]);
+      }
+    }
+
     // For Direct Intake without purchase invoice (ثبت مستقیم کالا بدون فاکتور خرید):
     // Post initial opening entry to accounts: Debit 11040x (موجودی انبار), Credit 3101 (سرمایه و موجودی اول دوره)
     if (!purchaseId && allocatedItems.length > 0) {
-      const WH_MAP: Record<string, string> = {
-        vitrine: '110401',
-        shop_storage: '110402',
-        central_external: '110403',
-        consignment: '110404',
-        in_transit: '110405',
-      };
       const directLines: { accountCode: string; debit: number; credit: number }[] = [];
       let totalDirectVal = 0;
 
@@ -2256,6 +2459,39 @@ export function App() {
       ...prev,
     ]);
 
+    const WH_ACC_MAP: Record<string, string> = {
+      vitrine: '110401',
+      shop_storage: '110402',
+      central_external: '110403',
+      consignment: '110404',
+      in_transit: '110405',
+    };
+    const fromAcc = WH_ACC_MAP[fromWh] || '110401';
+    const toAcc = WH_ACC_MAP[toWh] || '110401';
+    const totalTransferVal = Math.round(qty * transferredCost);
+    if (totalTransferVal > 0 && fromAcc !== toAcc) {
+      const trLines = [
+        { accountCode: toAcc, debit: totalTransferVal, credit: 0 },
+        { accountCode: fromAcc, debit: 0, credit: totalTransferVal },
+      ];
+      setAccounts((curr) => postDoubleEntryToAccounts(curr, trLines));
+      const trGles: GLEntryRecord[] = trLines.map((l, idx) => ({
+        id: `gle-ste-${Date.now()}-${idx}`,
+        postingDate: todayStr,
+        voucherType: 'Stock Entry' as any,
+        voucherNo: vNo,
+        accountCode: l.accountCode,
+        accountName: accounts.find((a) => a.code === l.accountCode)?.name || l.accountCode,
+        debit: l.debit,
+        credit: l.credit,
+        costCenter: 'CC-101',
+        branchDimension: defaultBranch,
+        remarks: `انتقال بین‌انباری ${qty} عدد کالای ${sku} از ${fromWh} به ${toWh}`,
+        timestamp: Date.now() + idx,
+      }));
+      setGlEntries((prev) => [...trGles, ...prev]);
+    }
+
     showToast(
       `انتقال ${qty} عدد کالای ${sku} با بهای تمام‌شده (${formatCurrency(transferredCost)} ت) انجام شد.`
     );
@@ -2299,6 +2535,22 @@ export function App() {
       ];
 
       setAccounts((curr) => postDoubleEntryToAccounts(curr, ledgerLines));
+
+      const lossGlEntries: GLEntryRecord[] = ledgerLines.map((l, idx) => ({
+        id: `gle-loss-${Date.now()}-${idx}`,
+        postingDate: payload.incidentDate || todayStr,
+        voucherType: 'Journal Entry',
+        voucherNo: glVoucherNo,
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        debit: l.debit,
+        credit: l.credit,
+        costCenter: 'CC-101',
+        branchDimension: defaultBranch || DEFAULT_BRANCH_NAME,
+        remarks: l.note || `ثبت سند خسارت ${payload.incidentTypeLabel} (${incNo})`,
+        timestamp: Date.now() + idx,
+      }));
+      setGlEntries((prev) => [...lossGlEntries, ...prev]);
 
       const newJournal: JournalEntryRecord = {
         id: `je-loss-${Date.now()}`,
@@ -3133,7 +3385,47 @@ export function App() {
                 recordAuditLog('ثبت سند روزنامه دستی', `سند ${je.voucherNo}: ${je.title}`, 'مالی');
                 showToast(`سند روزنامه «${je.voucherNo}» با موفقیت ثبت و به دفاتر منتقل شد.`);
               }}
-              onSubmitJournalEntry={() => {}}
+              onSubmitJournalEntry={(id) => {
+                const je = journalEntries.find((j) => j.id === id);
+                if (!je || je.docstatus !== 0) return;
+                const lines = je.lines.map((l) => ({
+                  accountCode: l.accountCode,
+                  debit: l.debit,
+                  credit: l.credit,
+                }));
+                const nextAccounts = postDoubleEntryToAccounts(accounts, lines);
+                const nextJournals: JournalEntryRecord[] = journalEntries.map((j) =>
+                  j.id === id ? { ...j, docstatus: 1 as const } : j
+                );
+                const newGlEntries: GLEntryRecord[] = je.lines.map((l, index) => ({
+                  id: `gle-je-sub-${je.id}-${index}-${Date.now()}`,
+                  postingDate: je.postingDate,
+                  voucherType: 'سند روزنامه دستی' as any,
+                  voucherNo: je.voucherNo,
+                  accountCode: l.accountCode,
+                  accountName:
+                    l.accountName ||
+                    accounts.find((a) => a.code === l.accountCode)?.name ||
+                    l.accountCode,
+                  debit: l.debit || 0,
+                  credit: l.credit || 0,
+                  fiscalYear: getPersianYear(),
+                  costCenter: l.costCenter || 'CC-101',
+                  branchDimension: je.branchDimension || defaultBranch,
+                  remarks: l.note || je.title,
+                  timestamp: Date.now() + index,
+                }));
+                const nextGl = [...newGlEntries, ...glEntries];
+                void atomicCommitMultiStores([
+                  { storageKey: 'emkan.v4.accounts', value: nextAccounts },
+                  { storageKey: 'emkan.v1.journal-entries', value: nextJournals },
+                  { storageKey: 'emkan.v1.gl-entries', value: nextGl },
+                ]);
+                setAccounts(nextAccounts);
+                setJournalEntries(nextJournals);
+                setGlEntries(nextGl);
+                showToast(`سند پیش‌نویس «${je.voucherNo}» قطعی و به دفاتر منتقل شد.`);
+              }}
               onCancelJournalEntry={(id) => {
                 const je = journalEntries.find((j) => j.id === id);
                 if (!je || je.docstatus === 2) return;
@@ -3144,7 +3436,25 @@ export function App() {
                 }));
                 const nextAccounts = postDoubleEntryToAccounts(accounts, revLines);
                 const nextJournals: JournalEntryRecord[] = journalEntries.map((j) => (j.id === id ? { ...j, docstatus: 2 as const } : j));
-                const nextGl = glEntries.map((g) => (g.voucherNo === je.voucherNo ? { ...g, isCancelled: true } : g));
+                const reversalGles: GLEntryRecord[] = je.lines.map((l, index) => ({
+                  id: `gle-je-rev-${je.id}-${index}-${Date.now()}`,
+                  postingDate: formatPersianDate(new Date()),
+                  voucherType: 'سند روزنامه دستی' as any,
+                  voucherNo: je.voucherNo,
+                  accountCode: l.accountCode,
+                  accountName:
+                    l.accountName ||
+                    accounts.find((a) => a.code === l.accountCode)?.name ||
+                    l.accountCode,
+                  debit: l.credit || 0,
+                  credit: l.debit || 0,
+                  fiscalYear: getPersianYear(),
+                  costCenter: l.costCenter || 'CC-101',
+                  branchDimension: je.branchDimension || defaultBranch,
+                  remarks: `ابطال سند روزنامه ${je.voucherNo}`,
+                  timestamp: Date.now() + index,
+                }));
+                const nextGl = [...reversalGles, ...glEntries];
 
                 void atomicCommitMultiStores([
                   { storageKey: 'emkan.v4.accounts', value: nextAccounts },
@@ -3301,7 +3611,56 @@ export function App() {
                 recordAuditLog('ثبت دارایی ثابت', `خرید دارایی ${ast.name}`, 'مالی');
                 showToast(`دارایی «${ast.name}» در اموال ثبت شد.`);
               }}
-              onScrapOrSellAsset={() => {}}
+              onScrapOrSellAsset={(id, newStatus) => {
+                const ast = fixedAssets.find((a) => a.id === id);
+                if (!ast || ast.status === newStatus) return;
+                const bookVal = Math.max(0, ast.currentBookValue ?? ast.purchaseValue ?? 0);
+                setFixedAssets((prev) =>
+                  prev.map((a) => (a.id === id ? { ...a, status: newStatus, currentBookValue: 0 } : a))
+                );
+                if (bookVal > 0) {
+                  const vNo = `AST-DISP-${ast.assetTag}`;
+                  const today = formatPersianDate(new Date());
+                  setAccounts((curr) =>
+                    postDoubleEntryToAccounts(curr, [
+                      { accountCode: '5204', debit: bookVal, credit: 0 },
+                      { accountCode: '1201', debit: 0, credit: bookVal },
+                    ])
+                  );
+                  setGlEntries((prev) => [
+                    {
+                      id: `gle-ast-disp-${Date.now()}-1`,
+                      postingDate: today,
+                      voucherType: 'Journal Entry',
+                      voucherNo: vNo,
+                      accountCode: '5204',
+                      accountName: accounts.find((a) => a.code === '5204')?.name || 'هزینه و زیان اموال',
+                      debit: bookVal,
+                      credit: 0,
+                      costCenter: 'CC-101',
+                      branchDimension: defaultBranch,
+                      remarks: `خروج دارایی ثابت «${ast.name}» (${newStatus})`,
+                      timestamp: Date.now(),
+                    },
+                    {
+                      id: `gle-ast-disp-${Date.now()}-2`,
+                      postingDate: today,
+                      voucherType: 'Journal Entry',
+                      voucherNo: vNo,
+                      accountCode: '1201',
+                      accountName: accounts.find((a) => a.code === '1201')?.name || 'دارایی‌های ثابت',
+                      debit: 0,
+                      credit: bookVal,
+                      costCenter: 'CC-101',
+                      branchDimension: defaultBranch,
+                      remarks: `کسر ارزش دفتری دارایی «${ast.name}» (${newStatus})`,
+                      timestamp: Date.now() + 1,
+                    },
+                    ...prev,
+                  ]);
+                }
+                showToast(`وضعیت دارایی «${ast.name}» به «${newStatus}» تغییر یافت.`);
+              }}
               shareholders={shareholders}
               shareholderSnapshots={shareholderSnapshots}
               shareholderDrawings={shareholderDrawings}
@@ -3314,6 +3673,13 @@ export function App() {
               }) => {
                 const partner = shareholders.find((s) => s.id === partnerId);
                 if (!partner) return;
+                const sourceAcc = accounts.find((a) => a.code === paidFromAccountCode);
+                if (sourceAcc && sourceAcc.balance < amount) {
+                  showToast(
+                    `موجودی نقدی حساب «${sourceAcc.name}» (${formatCurrency(Math.max(0, sourceAcc.balance))} تومان) برای برداشت ${formatCurrency(amount)} تومان کافی نیست.`
+                  );
+                  return;
+                }
                 setShareholders((prev) =>
                   prev.map((s) =>
                     s.id === partnerId
@@ -3333,12 +3699,51 @@ export function App() {
                   },
                   ...prev,
                 ]);
+                const drwDate = formatPersianDate(new Date());
+                const drwVNo = `DRW-${Date.now().toString().slice(-5)}`;
                 setAccounts((curr) =>
                   postDoubleEntryToAccounts(curr, [
                     { accountCode: '3103', debit: amount, credit: 0 },
                     { accountCode: paidFromAccountCode, debit: 0, credit: amount },
                   ])
                 );
+                setGlEntries((prev) => [
+                  {
+                    id: `gle-drw-${Date.now()}-1`,
+                    postingDate: drwDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: drwVNo,
+                    accountCode: '3103',
+                    accountName: accounts.find((a) => a.code === '3103')?.name || 'برداشت شرکا',
+                    partyId: partner.id,
+                    partyName: partner.name,
+                    debit: amount,
+                    credit: 0,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: note || `برداشت سود توسط «${partner.name}»`,
+                    timestamp: Date.now(),
+                  },
+                  {
+                    id: `gle-drw-${Date.now()}-2`,
+                    postingDate: drwDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: drwVNo,
+                    accountCode: paidFromAccountCode,
+                    accountName:
+                      accounts.find((a) => a.code === paidFromAccountCode)?.name ||
+                      paidFromAccountCode,
+                    partyId: partner.id,
+                    partyName: partner.name,
+                    debit: 0,
+                    credit: amount,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: note || `پرداخت برداشت سود «${partner.name}»`,
+                    timestamp: Date.now() + 1,
+                  },
+                  ...prev,
+                ]);
                 showToast(
                   `برداشت سود (${formatCurrency(amount)} تومان) برای «${partner.name}» ثبت شد.`
                 );
@@ -3366,12 +3771,50 @@ export function App() {
                       : s
                   )
                 );
+                const capDate = formatPersianDate(new Date());
+                const capVNo = `CAP-${Date.now().toString().slice(-5)}`;
                 setAccounts((curr) =>
                   postDoubleEntryToAccounts(curr, [
                     { accountCode: toAccountCode, debit: amount, credit: 0 },
                     { accountCode: '3101', debit: 0, credit: amount },
                   ])
                 );
+                setGlEntries((prev) => [
+                  {
+                    id: `gle-cap-${Date.now()}-1`,
+                    postingDate: capDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: capVNo,
+                    accountCode: toAccountCode,
+                    accountName:
+                      accounts.find((a) => a.code === toAccountCode)?.name || toAccountCode,
+                    partyId: partner.id,
+                    partyName: partner.name,
+                    debit: amount,
+                    credit: 0,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: `آورده نقدی شریک «${partner.name}»`,
+                    timestamp: Date.now(),
+                  },
+                  {
+                    id: `gle-cap-${Date.now()}-2`,
+                    postingDate: capDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: capVNo,
+                    accountCode: '3101',
+                    accountName: accounts.find((a) => a.code === '3101')?.name || 'سرمایه اولیه',
+                    partyId: partner.id,
+                    partyName: partner.name,
+                    debit: 0,
+                    credit: amount,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: `افزایش سرمایه از محل آورده نقدی «${partner.name}»`,
+                    timestamp: Date.now() + 1,
+                  },
+                  ...prev,
+                ]);
                 showToast(
                   `آورده نقدی (${formatCurrency(amount)} تومان) برای «${partner.name}» ثبت شد.`
                 );
@@ -3597,12 +4040,46 @@ export function App() {
                   isLocked: true,
                   note,
                 };
+                const expAccCode = tmpl.accountCode || '5201';
                 setAccounts((curr) =>
                   postDoubleEntryToAccounts(curr, [
-                    { accountCode: tmpl.accountCode || '5201', debit: amount, credit: 0 },
+                    { accountCode: expAccCode, debit: amount, credit: 0 },
                     { accountCode: paidFromAccountCode, debit: 0, credit: amount },
                   ])
                 );
+                setGlEntries((prev) => [
+                  {
+                    id: `gle-mfix-${Date.now()}-1`,
+                    postingDate: newRec.paymentDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: vNo,
+                    accountCode: expAccCode,
+                    accountName: accounts.find((a) => a.code === expAccCode)?.name || tmpl.name,
+                    debit: amount,
+                    credit: 0,
+                    costCenter: tmpl.costCenterName || 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: note || `هزینه ثابت ماهانه «${tmpl.name}» (${monthYear})`,
+                    timestamp: Date.now(),
+                  },
+                  {
+                    id: `gle-mfix-${Date.now()}-2`,
+                    postingDate: newRec.paymentDate,
+                    voucherType: 'Journal Entry',
+                    voucherNo: vNo,
+                    accountCode: paidFromAccountCode,
+                    accountName:
+                      accounts.find((a) => a.code === paidFromAccountCode)?.name ||
+                      paidFromAccountCode,
+                    debit: 0,
+                    credit: amount,
+                    costCenter: tmpl.costCenterName || 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: note || `پرداخت هزینه ثابت «${tmpl.name}» (${monthYear})`,
+                    timestamp: Date.now() + 1,
+                  },
+                  ...prev,
+                ]);
                 setMonthlyExpenseLedger((prev) => [newRec, ...prev]);
                 showToast(
                   `هزینه «${tmpl.name}» برای ${monthYear} ثبت و قفل شد.`
@@ -3692,6 +4169,29 @@ export function App() {
                 setSalesInvoices((prev) => [draftInv, ...prev]);
                 showToast(`سفارش آنلاین «${item.name}» به صورت پیش‌فاکتور ثبت شد.`);
                 recordAuditLog('ثبت سفارش وب‌شاپ', `پیش‌فاکتور ${draftInv.invoiceNo} برای ${item.name}`, 'فروش');
+              }}
+              onAddLead={({ customerName, company, expectedValue }) => {
+                const newLead: CrmLeadRecord = {
+                  id: `lead-web-${Date.now()}`,
+                  fullName: customerName,
+                  phone: '—',
+                  source: 'وبسایت',
+                  campaignName: company,
+                  interestStyle: 'همکار عمده‌فروش',
+                  stage: 'لید جدید',
+                  probability: 30,
+                  estimatedValue: expectedValue || 0,
+                  loyaltyTier: 'برنزی',
+                  loyaltyPoints: 0,
+                  clvAmount: 0,
+                  lastPurchaseDaysAgo: 0,
+                };
+                setCrmLeads((prev) => [newLead, ...prev]);
+                recordAuditLog(
+                  'ثبت سرنخ نمایندگی وب‌شاپ',
+                  `سرنخ: ${customerName} (${company})`,
+                  'فروش'
+                );
               }}
               onShowToast={showToast}
             />
@@ -3785,12 +4285,18 @@ export function App() {
                   schemaVersion: 2,
                   exportedAt: formatPersianDate(new Date()),
                   branch: defaultBranch,
+                  branches,
                   accounts,
                   inventoryItems,
                   customerContacts,
                   salesInvoices,
                   purchaseInvoices,
                   shareholders,
+                  shareholderSnapshots,
+                  shareholderDrawings,
+                  masterOptions,
+                  categorySectors,
+                  bulkSmsPool,
                   stockLedgerEntries,
                   glEntries,
                   journalEntries,
@@ -3820,6 +4326,19 @@ export function App() {
                 if (Array.isArray(dump.salesInvoices)) setSalesInvoices(dump.salesInvoices);
                 if (Array.isArray(dump.purchaseInvoices)) setPurchaseInvoices(dump.purchaseInvoices);
                 if (Array.isArray(dump.shareholders)) setShareholders(dump.shareholders);
+                if (Array.isArray(dump.shareholderSnapshots)) setShareholderSnapshots(dump.shareholderSnapshots);
+                if (Array.isArray(dump.shareholderDrawings)) setShareholderDrawings(dump.shareholderDrawings);
+                if (dump.masterOptions && typeof dump.masterOptions === 'object') {
+                  setMasterOptions(dump.masterOptions);
+                }
+                if (dump.categorySectors && typeof dump.categorySectors === 'object') {
+                  setCategorySectors(dump.categorySectors);
+                }
+                if (Array.isArray(dump.bulkSmsPool)) setBulkSmsPool(dump.bulkSmsPool);
+                if (Array.isArray(dump.branches)) setBranches(dump.branches);
+                if (typeof dump.branch === 'string' && dump.branch.trim()) {
+                  setDefaultBranch(dump.branch);
+                }
                 if (Array.isArray(dump.stockLedgerEntries)) setStockLedgerEntries(dump.stockLedgerEntries);
                 if (Array.isArray(dump.theftFraudIncidents)) setTheftFraudIncidents(dump.theftFraudIncidents);
                 if (Array.isArray(dump.glEntries)) setGlEntries(dump.glEntries);

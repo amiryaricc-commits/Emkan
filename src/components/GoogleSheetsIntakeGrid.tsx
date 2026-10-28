@@ -471,9 +471,15 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
   const applySelectionColor = (color: string) => {
     const cellColors = { ...gridConfig.cellColors };
     for (let rowIndex = selectionBox.minRow; rowIndex <= selectionBox.maxRow; rowIndex += 1) {
+      const targetRow = rows[rowIndex];
       for (let colIndex = selectionBox.minCol; colIndex <= selectionBox.maxCol; colIndex += 1) {
         const column = columns[colIndex];
-        if (column) cellColors[`${rowIndex}:${column.id}`] = color;
+        if (column) {
+          if (targetRow?.rowId) {
+            cellColors[`${targetRow.rowId}:${column.id}`] = color;
+          }
+          delete cellColors[`${rowIndex}:${column.id}`];
+        }
       }
     }
     setGridConfig((current) => ({ ...current, cellColors }));
@@ -621,19 +627,21 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       scrollActiveCellIntoView(validR, validC);
 
       const key = `${validR}_${validC}`;
-      window.setTimeout(() => {
-        if (startEditing) {
+      if (startEditing) {
+        window.setTimeout(() => {
           const inp = inputRefs.current.get(key);
           if (inp && document.activeElement !== inp) {
             inp.focus();
           }
-        } else {
+        }, 0);
+      } else {
+        window.setTimeout(() => {
           const td = cellTdRefs.current.get(key);
           if (td) {
             td.focus({ preventScroll: true });
           }
-        }
-      }, 20);
+        }, 16);
+      }
     },
     [rows.length, columns.length, scrollActiveCellIntoView]
   );
@@ -1555,6 +1563,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       }
       return next;
     });
+    pushHistoryState(updated);
     onChangeRows(updated);
   };
 
@@ -2002,6 +2011,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                           key={colDef.id}
                           style={{
                             backgroundColor:
+                              gridConfig.cellColors?.[`${row.rowId}:${colDef.id}`] ||
                               gridConfig.cellColors?.[`${rowIdx}:${colDef.id}`] ||
                               gridConfig.columnColors?.[colDef.id],
                           }}

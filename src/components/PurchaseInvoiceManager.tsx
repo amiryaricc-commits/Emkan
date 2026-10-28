@@ -334,13 +334,15 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
     const detectedFirstSector =
       firstLine?.sector || detectCategorySector(firstLine?.parentTag || '', categorySectors);
 
+    const selectedWarehouseObj = warehouses.find((w) => w.key === pinvWarehouseKey);
     const newPinv: PurchaseInvoiceRecord = {
       id: `pinv-${Date.now()}`,
       billNo: `PINV-${140400 + purchaseInvoices.length + 1}`,
       supplierName: pinvSupplier.trim(),
       date: formatPersianDate(new Date()),
-      warehouse:
-        warehouses.find((w) => w.key === pinvWarehouseKey)?.name || 'انبار خارجی / مرکزی',
+      warehouse: selectedWarehouseObj?.name || 'انبار خارجی / مرکزی',
+      warehouseKey: pinvWarehouseKey,
+      inventoryAccountCode: selectedWarehouseObj?.accountCode,
       totalAmount: totalNum,
       paidAmount: paidNum,
       landedCostAdded: 0,

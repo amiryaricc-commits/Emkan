@@ -6,12 +6,11 @@ import {
   Trash2,
   Copy,
   ArrowDown,
+  ArrowUp,
   Sparkles,
   CheckCircle2,
   Layers,
   Wand2,
-  Download,
-  Info,
   ClipboardPaste,
   Scissors,
   Undo2,
@@ -19,9 +18,9 @@ import {
   Eraser,
   CheckSquare,
   Settings2,
-  Paintbrush,
   ClipboardCopy,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import {
   WarehouseKey,
@@ -31,8 +30,8 @@ import {
   InventoryItemRecord,
   MasterOptionsRegistry,
 } from '../data/erpSeedData';
-import { formatCurrency, normalizePersianInput } from '../utils/erpEngine';
-import { CurrencyInput, formatLiveComma, parseCommaNumber, toEnglishDigits } from './CurrencyInput';
+import { formatCurrency } from '../utils/erpEngine';
+import { CurrencyInput, parseCommaNumber } from './CurrencyInput';
 import { GridSearchableSelect } from './GridSearchableSelect';
 
 export interface SkuBreakdownRow {
@@ -135,16 +134,29 @@ export interface GridColumnDef {
   align: 'right' | 'center' | 'left';
   type: 'text' | 'number' | 'currency' | 'readonly_currency' | 'select' | 'checkbox';
   options?: string[];
+  optionColors?: Record<string, string>;
 }
 
 interface IntakeGridConfig {
   columnOrder?: string[];
   validationOptions?: Record<string, string[]>;
-  columnColors?: Record<string, string>;
-  cellColors?: Record<string, string>;
+  optionColors?: Record<string, Record<string, string>>;
 }
 
-const INTAKE_GRID_CONFIG_KEY = 'emkan.intake-grid-config.v1';
+const INTAKE_GRID_CONFIG_KEY = 'emkan.intake-grid-config.v2';
+
+// Preset Google Sheets Data Validation Chip Colors (for data values, NOT cell backgrounds)
+const DATA_CHIP_COLOR_PALETTE = [
+  { label: 'پیش‌فرض', value: '' },
+  { label: 'نیلی', value: '#4f46e5' },
+  { label: 'زمردی', value: '#059669' },
+  { label: 'کهربایی', value: '#d97706' },
+  { label: 'سرخ', value: '#e11d48' },
+  { label: 'آسمانی', value: '#0284c7' },
+  { label: 'بنفش', value: '#7c3aed' },
+  { label: 'فیروزه‌ای', value: '#0d9488' },
+  { label: 'خاکستری', value: '#475569' },
+];
 
 function loadIntakeGridConfig(): IntakeGridConfig {
   if (typeof window === 'undefined') return {};
@@ -160,31 +172,76 @@ function loadIntakeGridConfig(): IntakeGridConfig {
 }
 
 export const GRID_COLUMNS: GridColumnDef[] = [
-  { col: 'A', id: 'parentTag', label: 'تگ کالا', width: 'min-w-[190px]', align: 'right', type: 'text' },
+  { col: 'A', id: 'parentTag', label: 'تگ کالا', width: 'min-w-[190px]', align: 'right', type: 'select' },
   { col: 'B', id: 'sku', label: 'SKU', width: 'min-w-[160px]', align: 'left', type: 'text' },
-  { col: 'C', id: 'name', label: 'نام کامل', width: 'min-w-[220px]', align: 'right', type: 'text' },
-  { col: 'D', id: 'brand', label: 'برند', width: 'min-w-[130px]', align: 'right', type: 'text' },
-  { col: 'E', id: 'model', label: 'مدل', width: 'min-w-[130px]', align: 'right', type: 'text' },
-  { col: 'F', id: 'itemType', label: 'دسته‌بندی', width: 'min-w-[175px]', align: 'right', type: 'select',
-    options: ['جویس و سالت', 'دستگاه پاد و ماد', 'کویل و کارتریج', 'پاد یکبارمصرف', 'لوازم جانبی ویپ', 'قطعات کامپیوتر و سخت‌افزار', 'لوازم جانبی کامپیوتر', 'سایر کالاها']
+  { col: 'C', id: 'name', label: 'نام کامل', width: 'min-w-[220px]', align: 'right', type: 'select' },
+  { col: 'D', id: 'brand', label: 'برند', width: 'min-w-[130px]', align: 'right', type: 'select' },
+  { col: 'E', id: 'model', label: 'مدل', width: 'min-w-[130px]', align: 'right', type: 'select' },
+  {
+    col: 'F',
+    id: 'itemType',
+    label: 'دسته‌بندی',
+    width: 'min-w-[175px]',
+    align: 'right',
+    type: 'select',
+    options: [
+      'جویس و سالت',
+      'دستگاه پاد و ماد',
+      'کویل و کارتریج',
+      'پاد یکبارمصرف',
+      'لوازم جانبی ویپ',
+      'قطعات کامپیوتر و سخت‌افزار',
+      'لوازم جانبی کامپیوتر',
+      'سایر کالاها',
+    ],
   },
-  { col: 'G', id: 'nicotine', label: 'نیکوتین', width: 'min-w-[130px]', align: 'center', type: 'select',
-    options: ['', '0mg', '3mg', '6mg', '20mg', '25mg', '30mg', '35mg', '50mg']
+  {
+    col: 'G',
+    id: 'nicotine',
+    label: 'نیکوتین',
+    width: 'min-w-[130px]',
+    align: 'center',
+    type: 'select',
+    options: ['0mg', '3mg', '6mg', '20mg', '25mg', '30mg', '35mg', '50mg'],
   },
-  { col: 'H', id: 'liquidVolumeMl', label: 'حجم مایع', width: 'min-w-[145px]', align: 'center', type: 'select',
-    options: ['', '2 ml', '3 ml', '4.5 ml', '5 ml', '10 ml', '15 ml', '30 ml', '60 ml', '100 ml', '120 ml']
+  {
+    col: 'H',
+    id: 'liquidVolumeMl',
+    label: 'حجم مایع',
+    width: 'min-w-[145px]',
+    align: 'center',
+    type: 'select',
+    options: ['2 ml', '3 ml', '4.5 ml', '5 ml', '10 ml', '15 ml', '30 ml', '60 ml', '100 ml', '120 ml'],
   },
   { col: 'I', id: 'batteryCapacityMah', label: 'حجم باتری', width: 'min-w-[130px]', align: 'center', type: 'number' },
-  { col: 'J', id: 'resistanceOhm', label: 'مقاومت (Ω)', width: 'min-w-[125px]', align: 'center', type: 'select',
-    options: ['', '0.15 Ω', '0.2 Ω', '0.4 Ω', '0.6 Ω', '0.8 Ω', '1.0 Ω', '1.2 Ω']
+  {
+    col: 'J',
+    id: 'resistanceOhm',
+    label: 'مقاومت (Ω)',
+    width: 'min-w-[125px]',
+    align: 'center',
+    type: 'select',
+    options: ['0.15 Ω', '0.2 Ω', '0.4 Ω', '0.6 Ω', '0.8 Ω', '1.0 Ω', '1.2 Ω'],
   },
-  { col: 'K', id: 'puffCount', label: 'تعداد پاف', width: 'min-w-[125px]', align: 'center', type: 'select',
-    options: ['', '۵۰۰۰ پاف', '۱۰۰۰۰ پاف', '۱۵۰۰۰ پاف', '۲۵۰۰۰ پاف', '۴۰۰۰۰ پاف', '۶۰۰۰۰ پاف']
+  {
+    col: 'K',
+    id: 'puffCount',
+    label: 'تعداد پاف',
+    width: 'min-w-[125px]',
+    align: 'center',
+    type: 'select',
+    options: ['۵۰۰۰ پاف', '۱۰۰۰۰ پاف', '۱۵۰۰۰ پاف', '۲۵۰۰۰ پاف', '۴۰۰۰۰ پاف', '۶۰۰۰۰ پاف'],
   },
-  { col: 'L', id: 'color', label: 'رنگ', width: 'min-w-[120px]', align: 'right', type: 'text' },
+  { col: 'L', id: 'color', label: 'رنگ', width: 'min-w-[120px]', align: 'right', type: 'select' },
   { col: 'M', id: 'expiryDate', label: 'تاریخ BB', width: 'min-w-[130px]', align: 'center', type: 'text' },
-  { col: 'N', id: 'condition', label: 'وضعیت', width: 'min-w-[120px]', align: 'center', type: 'select',
-    options: ['آکبند', 'استوک', 'کارکرده / تستر']
+  {
+    col: 'N',
+    id: 'condition',
+    label: 'وضعیت',
+    width: 'min-w-[120px]',
+    align: 'center',
+    type: 'select',
+    options: ['آکبند', 'استوک', 'کارکرده / تستر'],
   },
   { col: 'O', id: 'targetWarehouse', label: 'انبار', width: 'min-w-[140px]', align: 'right', type: 'select' },
   { col: 'P', id: 'qty', label: 'تعداد', width: 'min-w-[90px]', align: 'center', type: 'number' },
@@ -195,7 +252,6 @@ export const GRID_COLUMNS: GridColumnDef[] = [
   { col: 'U', id: 'resellerPrice', label: 'قیمت فروش ری سلر', width: 'min-w-[145px]', align: 'left', type: 'currency' },
 ];
 
-// Quick product flavor suggestions for fast one-click pills
 interface GoogleSheetsIntakeGridProps {
   rows: SkuBreakdownRow[];
   onChangeRows: (newRows: SkuBreakdownRow[]) => void;
@@ -236,11 +292,16 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeCell, setActiveCell] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
   const [isEditing, setIsEditing] = useState(false);
+  const activeCellRef = useRef<{ row: number; col: number }>({ row: 0, col: 0 });
+  const rowsRef = useRef<SkuBreakdownRow[]>(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
   const [gridConfig, setGridConfig] = useState<IntakeGridConfig>(loadIntakeGridConfig);
   const [editingColumnId, setEditingColumnId] = useState<keyof SkuBreakdownRow | null>(null);
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
-  const [validationDraft, setValidationDraft] = useState('');
-  const [colorDraft, setColorDraft] = useState('#fff3b0');
+  const [newOptionInput, setNewOptionInput] = useState('');
+  const [newOptionColor, setNewOptionColor] = useState('#4f46e5');
   const [draggedColumnId, setDraggedColumnId] = useState<keyof SkuBreakdownRow | null>(null);
 
   useEffect(() => {
@@ -252,17 +313,82 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     }
   }, [gridConfig, onShowToast]);
 
-  // Moving Weighted Average (MWA) derivation
+  // Match a row against activePurchaseInvoice.lines by product name (itemName) or parentTag
+  const findMatchingInvoiceLine = useCallback(
+    (tagOrName: string, fallbackName = ''): InvoiceLineItem | null => {
+      if (activePurchaseLine) return activePurchaseLine;
+      const lines = activePurchaseInvoice?.lines || [];
+      if (lines.length === 0) return null;
+      const q1 = tagOrName.trim().toLocaleLowerCase();
+      const q2 = fallbackName.trim().toLocaleLowerCase();
+      if (!q1 && !q2) {
+        return lines.length === 1 ? lines[0] : null;
+      }
+      // Exact match on itemName first
+      const exact = lines.find((l) => {
+        const lName = (l.itemName || '').trim().toLocaleLowerCase();
+        return (q1 && lName === q1) || (q2 && lName === q2);
+      });
+      if (exact) return exact;
+      // Partial / substring match on itemName
+      const partial = lines.find((l) => {
+        const lName = (l.itemName || '').trim().toLocaleLowerCase();
+        if (!lName) return false;
+        return (
+          (q1 && (lName.includes(q1) || q1.includes(lName))) ||
+          (q2 && (lName.includes(q2) || q2.includes(lName)))
+        );
+      });
+      if (partial) return partial;
+      return lines.length === 1 ? lines[0] : null;
+    },
+    [activePurchaseInvoice, activePurchaseLine]
+  );
+
+  // Derive unit purchase cost (قیمت خرید ثبت شده در فاکتور) for a row
+  const getRowPurchaseCost = useCallback(
+    (row: SkuBreakdownRow): number => {
+      if (row.unitPurchasePrice && row.unitPurchasePrice > 0) {
+        return row.unitPurchasePrice;
+      }
+      const matchedLine = findMatchingInvoiceLine(row.parentTag, row.name);
+      if (matchedLine) {
+        const lineCost = matchedLine.valuationRate || matchedLine.unitPrice || 0;
+        if (lineCost > 0) return lineCost;
+      }
+      if (targetCost > 0 && (row.parentTag.trim() || row.name.trim() || row.sku.trim())) {
+        return targetCost;
+      }
+      const catalogMatch =
+        (catalogItems || []).find(
+          (it) =>
+            (row.sku && it.sku.toLowerCase() === row.sku.toLowerCase()) ||
+            (row.name && it.name.trim().toLowerCase() === row.name.trim().toLowerCase()) ||
+            (row.parentTag && it.name.trim().toLowerCase() === row.parentTag.trim().toLowerCase())
+        ) ||
+        (knownVariants || []).find(
+          (it) =>
+            (row.sku && it.sku.toLowerCase() === row.sku.toLowerCase()) ||
+            (row.name && it.name.trim().toLowerCase() === row.name.trim().toLowerCase())
+        );
+      if (catalogMatch && catalogMatch.valuationRate > 0) {
+        return catalogMatch.valuationRate;
+      }
+      return 0;
+    },
+    [findMatchingInvoiceLine, targetCost, catalogItems, knownVariants]
+  );
+
+  // Moving Weighted Average (MWA - میانگین موزون) derivation
   const getRowMwaCost = useCallback(
     (row: SkuBreakdownRow): number => {
-      if (row.mwaPurchasePrice && row.mwaPurchasePrice > 0) {
-        return row.mwaPurchasePrice;
-      }
+      const currentCost = getRowPurchaseCost(row);
       const match =
         (catalogItems || []).find(
           (it) =>
             (row.sku && it.sku.toLowerCase() === row.sku.toLowerCase()) ||
-            (row.name && it.name.trim().toLowerCase() === row.name.trim().toLowerCase())
+            (row.name && it.name.trim().toLowerCase() === row.name.trim().toLowerCase()) ||
+            (row.parentTag && it.name.trim().toLowerCase() === row.parentTag.trim().toLowerCase())
         ) ||
         (knownVariants || []).find(
           (it) =>
@@ -271,10 +397,12 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         );
 
       if (match) {
-        const existingValuation = match.valuationRate || (match as unknown as { purchasePrice?: number }).purchasePrice || 0;
+        const existingValuation =
+          match.valuationRate ||
+          (match as unknown as { purchasePrice?: number }).purchasePrice ||
+          0;
         const existingStock = match.stockQty || 0;
-        const currentQty = row.qty || 1;
-        const currentCost = row.unitPurchasePrice || targetCost || 0;
+        const currentQty = row.qty > 0 ? row.qty : 1;
 
         if (existingValuation > 0) {
           if (existingStock > 0 && currentCost > 0) {
@@ -282,23 +410,111 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
             const totalQty = existingStock + currentQty;
             return Math.round(totalCost / totalQty);
           }
-          return existingValuation;
+          return currentCost > 0 ? currentCost : existingValuation;
         }
       }
 
-      return row.unitPurchasePrice || targetCost || 0;
+      if (currentCost > 0) return currentCost;
+      if (row.mwaPurchasePrice && row.mwaPurchasePrice > 0) return row.mwaPurchasePrice;
+      return 0;
     },
-    [catalogItems, knownVariants, targetCost]
+    [catalogItems, knownVariants, getRowPurchaseCost]
   );
 
-  // Dynamic columns computed from masterOptions for instant synchronization
+  // Dynamic columns with Google Sheets Data Validation for all non-price fields that have historical/registered data
   const columns = useMemo<GridColumnDef[]>(() => {
+    const invoiceProductNames = (activePurchaseInvoice?.lines || [])
+      .map((l) => l.itemName?.trim())
+      .filter(Boolean) as string[];
+    const catalogParentTags = (catalogItems || [])
+      .map((it) => it.parentTag?.trim() || it.name?.trim())
+      .filter(Boolean) as string[];
+    const catalogNames = (catalogItems || [])
+      .map((it) => it.name?.trim())
+      .filter(Boolean) as string[];
+    const catalogBrands = (catalogItems || [])
+      .map((it) => it.brand?.trim())
+      .filter(Boolean) as string[];
+    const catalogModels = (catalogItems || [])
+      .map((it) => it.model?.trim())
+      .filter(Boolean) as string[];
+    const catalogCategories = (catalogItems || [])
+      .map((it) => it.category?.trim())
+      .filter(Boolean) as string[];
+    const catalogNicotines = (catalogItems || [])
+      .map((it) => it.nicotine?.trim())
+      .filter(Boolean) as string[];
+    const catalogVolumes = (catalogItems || [])
+      .map((it) => (it.liquidVolumeMl ? `${it.liquidVolumeMl} ml` : ''))
+      .filter(Boolean);
+    const catalogResistances = (catalogItems || [])
+      .map((it) => it.resistanceOhm?.trim())
+      .filter(Boolean) as string[];
+    const catalogPuffs = (catalogItems || [])
+      .map((it) => it.puffCount?.trim())
+      .filter(Boolean) as string[];
+    const catalogColors = (catalogItems || [])
+      .map((it) => it.color?.trim())
+      .filter(Boolean) as string[];
+
     const baseColumns: GridColumnDef[] = [
-      { col: 'A', id: 'parentTag', label: 'تگ کالا', width: 'min-w-[190px]', align: 'right', type: 'text' },
+      {
+        col: 'A',
+        id: 'parentTag',
+        label: 'تگ کالا (نام در فاکتور)',
+        width: 'min-w-[205px]',
+        align: 'right',
+        type: 'select',
+        options: Array.from(
+          new Set([
+            ...invoiceProductNames,
+            ...catalogParentTags,
+            ...(masterOptions.tags || []),
+          ])
+        ),
+      },
       { col: 'B', id: 'sku', label: 'SKU', width: 'min-w-[160px]', align: 'left', type: 'text' },
-      { col: 'C', id: 'name', label: 'نام کامل', width: 'min-w-[220px]', align: 'right', type: 'text' },
-      { col: 'D', id: 'brand', label: 'برند', width: 'min-w-[130px]', align: 'right', type: 'text' },
-      { col: 'E', id: 'model', label: 'مدل', width: 'min-w-[130px]', align: 'right', type: 'text' },
+      {
+        col: 'C',
+        id: 'name',
+        label: 'نام کامل',
+        width: 'min-w-[220px]',
+        align: 'right',
+        type: 'select',
+        options: Array.from(new Set([...invoiceProductNames, ...catalogNames])),
+      },
+      {
+        col: 'D',
+        id: 'brand',
+        label: 'برند',
+        width: 'min-w-[130px]',
+        align: 'right',
+        type: 'select',
+        options: Array.from(
+          new Set([
+            ...catalogBrands,
+            'Voopoo',
+            'Vaporesso',
+            'GeekVape',
+            'Uwell',
+            'Lost Vape',
+            'Nasty',
+            'VGOD',
+            'Ripe Vapes',
+            'Tokyo',
+            'BLVK',
+          ])
+        ),
+      },
+      {
+        col: 'E',
+        id: 'model',
+        label: 'مدل',
+        width: 'min-w-[130px]',
+        align: 'right',
+        type: 'select',
+        options: Array.from(new Set([...catalogModels])),
+      },
       {
         col: 'F',
         id: 'itemType',
@@ -308,9 +524,9 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         type: 'select',
         options: Array.from(
           new Set([
-            '',
             ...(masterOptions.tags || []),
             ...(masterOptions.itemTypes || []),
+            ...catalogCategories,
             'جویس و سالت',
             'دستگاه پاد و ماد',
             'کویل و کارتریج',
@@ -328,7 +544,20 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         width: 'min-w-[130px]',
         align: 'center',
         type: 'select',
-        options: ['', ...(masterOptions.nicotines || [])],
+        options: Array.from(
+          new Set([
+            ...(masterOptions.nicotines || []),
+            ...catalogNicotines,
+            '0mg',
+            '3mg',
+            '6mg',
+            '20mg',
+            '25mg',
+            '30mg',
+            '35mg',
+            '50mg',
+          ])
+        ),
       },
       {
         col: 'H',
@@ -337,24 +566,22 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         width: 'min-w-[145px]',
         align: 'center',
         type: 'select',
-        options: [
-          '',
-          ...Array.from(
-            new Set([
-              '2 ml',
-              '3 ml',
-              '4.5 ml',
-              '5 ml',
-              '10 ml',
-              '15 ml',
-              '30 ml',
-              '60 ml',
-              '100 ml',
-              '120 ml',
-              ...(masterOptions.liquidVolumes || []),
-            ])
-          ),
-        ],
+        options: Array.from(
+          new Set([
+            ...(masterOptions.liquidVolumes || []),
+            ...catalogVolumes,
+            '2 ml',
+            '3 ml',
+            '4.5 ml',
+            '5 ml',
+            '10 ml',
+            '15 ml',
+            '30 ml',
+            '60 ml',
+            '100 ml',
+            '120 ml',
+          ])
+        ),
       },
       { col: 'I', id: 'batteryCapacityMah', label: 'حجم باتری (mAh)', width: 'min-w-[130px]', align: 'center', type: 'number' },
       {
@@ -364,7 +591,19 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         width: 'min-w-[125px]',
         align: 'center',
         type: 'select',
-        options: ['', ...(masterOptions.resistances || [])],
+        options: Array.from(
+          new Set([
+            ...(masterOptions.resistances || []),
+            ...catalogResistances,
+            '0.15 Ω',
+            '0.2 Ω',
+            '0.4 Ω',
+            '0.6 Ω',
+            '0.8 Ω',
+            '1.0 Ω',
+            '1.2 Ω',
+          ])
+        ),
       },
       {
         col: 'K',
@@ -373,9 +612,28 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         width: 'min-w-[125px]',
         align: 'center',
         type: 'select',
-        options: ['', ...(masterOptions.puffs || [])],
+        options: Array.from(
+          new Set([
+            ...(masterOptions.puffs || []),
+            ...catalogPuffs,
+            '۵۰۰۰ پاف',
+            '۱۰۰۰۰ پاف',
+            '۱۵۰۰۰ پاف',
+            '۲۵۰۰۰ پاف',
+            '۴۰۰۰۰ پاف',
+            '۶۰۰۰۰ پاف',
+          ])
+        ),
       },
-      { col: 'L', id: 'color', label: 'رنگ', width: 'min-w-[120px]', align: 'right', type: 'text' },
+      {
+        col: 'L',
+        id: 'color',
+        label: 'رنگ',
+        width: 'min-w-[120px]',
+        align: 'right',
+        type: 'select',
+        options: Array.from(new Set([...(masterOptions.colors || []), ...catalogColors])),
+      },
       { col: 'M', id: 'expiryDate', label: 'تاریخ BB', width: 'min-w-[130px]', align: 'center', type: 'text' },
       {
         col: 'N',
@@ -384,9 +642,19 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         width: 'min-w-[120px]',
         align: 'center',
         type: 'select',
-        options: masterOptions.conditions?.length ? masterOptions.conditions : ['آکبند', 'استوک', 'کارکرده / تستر'],
+        options: masterOptions.conditions?.length
+          ? masterOptions.conditions
+          : ['آکبند', 'استوک', 'کارکرده / تستر'],
       },
-      { col: 'O', id: 'targetWarehouse', label: 'انبار', width: 'min-w-[140px]', align: 'right', type: 'select' },
+      {
+        col: 'O',
+        id: 'targetWarehouse',
+        label: 'انبار',
+        width: 'min-w-[140px]',
+        align: 'right',
+        type: 'select',
+        options: warehouses.map((w) => w.name),
+      },
       { col: 'P', id: 'qty', label: 'تعداد', width: 'min-w-[90px]', align: 'center', type: 'number' },
       { col: 'Q', id: 'unitPurchasePrice', label: 'قیمت خرید', width: 'min-w-[135px]', align: 'left', type: 'readonly_currency' },
       { col: 'R', id: 'mwaPurchasePrice', label: 'میانگین موزون', width: 'min-w-[150px]', align: 'left', type: 'readonly_currency' },
@@ -394,16 +662,23 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       { col: 'T', id: 'festivalPrice', label: 'قیمت جشنواره', width: 'min-w-[135px]', align: 'left', type: 'currency' },
       { col: 'U', id: 'resellerPrice', label: 'قیمت فروش ری سلر', width: 'min-w-[145px]', align: 'left', type: 'currency' },
     ];
+
     const columnOrder = gridConfig.columnOrder || [];
     return baseColumns
-      .map((column, baseIndex) => ({
-        ...column,
-        baseIndex,
-        type: gridConfig.validationOptions?.[column.id]?.length ? 'select' : column.type,
-        options: gridConfig.validationOptions?.[column.id]?.length
-          ? gridConfig.validationOptions[column.id]
-          : column.options,
-      }))
+      .map((column, baseIndex) => {
+        const customOrderedOpts = gridConfig.validationOptions?.[column.id];
+        const mergedOptions =
+          customOrderedOpts && customOrderedOpts.length > 0
+            ? Array.from(new Set([...customOrderedOpts, ...(column.options || [])]))
+            : column.options;
+        return {
+          ...column,
+          baseIndex,
+          type: customOrderedOpts?.length ? 'select' : column.type,
+          options: mergedOptions,
+          optionColors: gridConfig.optionColors?.[column.id] || {},
+        };
+      })
       .sort((left, right) => {
         const leftIndex = columnOrder.indexOf(left.id);
         const rightIndex = columnOrder.indexOf(right.id);
@@ -416,37 +691,129 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         ...column,
         col: String.fromCharCode(65 + index),
       }));
-  }, [gridConfig.columnOrder, gridConfig.validationOptions, masterOptions]);
+  }, [
+    gridConfig.columnOrder,
+    gridConfig.validationOptions,
+    gridConfig.optionColors,
+    masterOptions,
+    catalogItems,
+    activePurchaseInvoice,
+    warehouses,
+  ]);
 
   const activeEditorColumn = columns.find((column) => column.id === editingColumnId) || null;
 
-  useEffect(() => {
-    if (!activeEditorColumn) return;
-    const options =
-      gridConfig.validationOptions?.[activeEditorColumn.id] || activeEditorColumn.options || [];
-    setValidationDraft(options.join('\n'));
+  const activeEditorOptions = useMemo(() => {
+    if (!activeEditorColumn) return [];
+    const customList = gridConfig.validationOptions?.[activeEditorColumn.id];
+    if (customList && customList.length > 0) {
+      return customList;
+    }
+    return (activeEditorColumn.options || []).filter(Boolean);
   }, [activeEditorColumn, gridConfig.validationOptions]);
 
   const openColumnEditor = (columnId: keyof SkuBreakdownRow) => {
     setEditingColumnId(columnId);
-    setColorDraft(gridConfig.columnColors?.[columnId] || '#fff3b0');
+    setNewOptionInput('');
     setIsColumnEditorOpen(true);
     setContextMenu(null);
   };
 
-  const saveValidationOptions = () => {
+  const handleMoveValidationOption = (optIndex: number, direction: 'up' | 'down') => {
     if (!activeEditorColumn) return;
-    const options = Array.from(
-      new Set(validationDraft.split(/\r?\n/).map((option) => option.trim()).filter(Boolean))
-    );
+    const list = [...activeEditorOptions];
+    const targetIndex = direction === 'up' ? optIndex - 1 : optIndex + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const [moved] = list.splice(optIndex, 1);
+    list.splice(targetIndex, 0, moved);
     setGridConfig((current) => ({
       ...current,
       validationOptions: {
         ...current.validationOptions,
-        [activeEditorColumn.id]: options,
+        [activeEditorColumn.id]: list,
       },
     }));
-    onShowToast('گزینه‌های اعتبارسنجی ستون ذخیره شد.');
+  };
+
+  const handleSetOptionColor = (optValue: string, colorHex: string) => {
+    if (!activeEditorColumn) return;
+    setGridConfig((current) => {
+      const colMap = { ...(current.optionColors?.[activeEditorColumn.id] || {}) };
+      if (!colorHex) {
+        delete colMap[optValue];
+      } else {
+        colMap[optValue] = colorHex;
+      }
+      return {
+        ...current,
+        optionColors: {
+          ...current.optionColors,
+          [activeEditorColumn.id]: colMap,
+        },
+      };
+    });
+  };
+
+  const handleAddValidationOption = () => {
+    if (!activeEditorColumn) return;
+    const trimmed = newOptionInput.trim();
+    if (!trimmed) return;
+    const nextList = Array.from(new Set([trimmed, ...activeEditorOptions]));
+    setGridConfig((current) => {
+      const colMap = { ...(current.optionColors?.[activeEditorColumn.id] || {}) };
+      if (newOptionColor) {
+        colMap[trimmed] = newOptionColor;
+      }
+      return {
+        ...current,
+        validationOptions: {
+          ...current.validationOptions,
+          [activeEditorColumn.id]: nextList,
+        },
+        optionColors: {
+          ...current.optionColors,
+          [activeEditorColumn.id]: colMap,
+        },
+      };
+    });
+    setNewOptionInput('');
+    onShowToast(`گزینه «${trimmed}» به اعتبارسنجی داده ستون اضافه شد.`);
+  };
+
+  const handleDeleteValidationOption = (optValue: string) => {
+    if (!activeEditorColumn) return;
+    const nextList = activeEditorOptions.filter((item) => item !== optValue);
+    setGridConfig((current) => {
+      const colMap = { ...(current.optionColors?.[activeEditorColumn.id] || {}) };
+      delete colMap[optValue];
+      return {
+        ...current,
+        validationOptions: {
+          ...current.validationOptions,
+          [activeEditorColumn.id]: nextList,
+        },
+        optionColors: {
+          ...current.optionColors,
+          [activeEditorColumn.id]: colMap,
+        },
+      };
+    });
+  };
+
+  const handleResetColumnValidation = () => {
+    if (!activeEditorColumn) return;
+    setGridConfig((current) => {
+      const nextValidation = { ...(current.validationOptions || {}) };
+      const nextColors = { ...(current.optionColors || {}) };
+      delete nextValidation[activeEditorColumn.id];
+      delete nextColors[activeEditorColumn.id];
+      return {
+        ...current,
+        validationOptions: nextValidation,
+        optionColors: nextColors,
+      };
+    });
+    onShowToast('ترتیب و رنگ گزینه‌های این ستون به حالت پیش‌فرض بازنشانی شد.');
   };
 
   const moveColumn = (sourceId: keyof SkuBreakdownRow, targetId: keyof SkuBreakdownRow) => {
@@ -460,38 +827,12 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     setGridConfig((current) => ({ ...current, columnOrder: order }));
   };
 
-  const applyColumnColor = (color: string) => {
-    if (!editingColumnId) return;
-    setGridConfig((current) => ({
-      ...current,
-      columnColors: { ...current.columnColors, [editingColumnId]: color },
-    }));
-  };
-
-  const applySelectionColor = (color: string) => {
-    const cellColors = { ...gridConfig.cellColors };
-    for (let rowIndex = selectionBox.minRow; rowIndex <= selectionBox.maxRow; rowIndex += 1) {
-      const targetRow = rows[rowIndex];
-      for (let colIndex = selectionBox.minCol; colIndex <= selectionBox.maxCol; colIndex += 1) {
-        const column = columns[colIndex];
-        if (column) {
-          if (targetRow?.rowId) {
-            cellColors[`${targetRow.rowId}:${column.id}`] = color;
-          }
-          delete cellColors[`${rowIndex}:${column.id}`];
-        }
-      }
-    }
-    setGridConfig((current) => ({ ...current, cellColors }));
-  };
-
   const copyAuditValue = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      onShowToast('متن کپی شد؛ می‌توانید آن را در شیت جای‌گذاری کنید.');
-    } catch (error) {
-      console.error('Could not copy audit value to clipboard.', error);
-      onShowToast('کپی خودکار ممکن نشد؛ متن را انتخاب و دستی کپی کنید.');
+      onShowToast(`«${value}» کپی شد.`);
+    } catch {
+      onShowToast('کپی در کلیپ‌بورد در دسترس نیست.');
     }
   };
 
@@ -602,20 +943,22 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     else inputRefs.current.delete(key);
   }, []);
 
-  // Ensure active cell is scrolled into view smoothly both horizontally and vertically
+  // Ensure active cell is scrolled into view both horizontally and vertically
   const scrollActiveCellIntoView = useCallback((rowIdx: number, colIdx: number) => {
     const key = `${rowIdx}_${colIdx}`;
     const td = cellTdRefs.current.get(key);
     if (td) {
-      td.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      td.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
     }
   }, []);
 
   // Set cell selection
   const selectCell = useCallback(
-    (rowIdx: number, colIdx: number, startEditing = false) => {
-      const validR = Math.max(0, Math.min(rows.length - 1, rowIdx));
+    (rowIdx: number, colIdx: number, startEditing = false, totalRowsOverride?: number) => {
+      const rowCount = totalRowsOverride ?? rowsRef.current.length;
+      const validR = Math.max(0, Math.min(Math.max(0, rowCount - 1), rowIdx));
       const validC = Math.max(0, Math.min(columns.length - 1, colIdx));
+      activeCellRef.current = { row: validR, col: validC };
       setActiveCell({ row: validR, col: validC });
       setSelectionRange({
         startRow: validR,
@@ -631,19 +974,19 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         window.setTimeout(() => {
           const inp = inputRefs.current.get(key);
           if (inp && document.activeElement !== inp) {
-            inp.focus();
+            inp.focus({ preventScroll: true });
           }
         }, 0);
       } else {
         window.setTimeout(() => {
           const td = cellTdRefs.current.get(key);
-          if (td) {
+          if (td && document.activeElement !== td) {
             td.focus({ preventScroll: true });
           }
-        }, 16);
+        }, 10);
       }
     },
-    [rows.length, columns.length, scrollActiveCellIntoView]
+    [columns.length, scrollActiveCellIntoView]
   );
 
   // Expand / shrink current selection range
@@ -739,6 +1082,25 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       }
 
       if (field === 'parentTag' || field === 'name') {
+        // 1. Match against active purchase invoice line first so purchase price & category populate!
+        const matchedInvLine = findMatchingInvoiceLine(
+          field === 'parentTag' ? cleanStr : next.parentTag,
+          field === 'name' ? cleanStr : next.name
+        );
+        if (matchedInvLine) {
+          const invCost = matchedInvLine.valuationRate || matchedInvLine.unitPrice || 0;
+          if (invCost > 0) {
+            next.unitPurchasePrice = invCost;
+          }
+          if (matchedInvLine.itemType && !next.itemType) {
+            next.itemType = matchedInvLine.itemType;
+          }
+          if (matchedInvLine.itemCondition) {
+            next.condition = matchedInvLine.itemCondition;
+          }
+        }
+
+        // 2. Match against existing catalog items for specs and MWA calculation
         const query = cleanStr.toLocaleLowerCase();
         const match = (catalogItems || []).find(
           (item) =>
@@ -748,7 +1110,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         if (match) {
           next.sku = match.sku || next.sku;
           next.name = match.name || next.name;
-          next.parentTag = match.parentTag || next.parentTag;
+          next.parentTag = match.parentTag || next.parentTag || cleanStr;
           next.brand = match.brand || next.brand;
           next.model = match.model || next.model;
           next.itemType = match.category || next.itemType;
@@ -757,10 +1119,21 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           next.resistanceOhm = match.resistanceOhm || next.resistanceOhm;
           next.puffCount = match.puffCount || next.puffCount;
           next.color = match.color || next.color;
-          next.unitPurchasePrice = match.valuationRate || next.unitPurchasePrice;
-          next.mwaPurchasePrice = match.valuationRate || next.mwaPurchasePrice;
+          if (!next.unitPurchasePrice) {
+            next.unitPurchasePrice = match.valuationRate || 0;
+          }
+          const existingStock = match.stockQty || 0;
+          const existingVal = match.valuationRate || 0;
+          const curCost = next.unitPurchasePrice || existingVal;
+          const curQty = next.qty > 0 ? next.qty : 1;
+          next.mwaPurchasePrice =
+            existingStock > 0 && existingVal > 0 && curCost > 0
+              ? Math.round((existingStock * existingVal + curQty * curCost) / (existingStock + curQty))
+              : curCost;
           next.retailPrice = match.retailPrice || next.retailPrice;
           next.resellerPrice = match.resellerPrice || next.resellerPrice;
+        } else if (next.unitPurchasePrice > 0) {
+          next.mwaPurchasePrice = next.unitPurchasePrice;
         }
       }
 
@@ -791,7 +1164,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
 
       return next;
     },
-    [catalogItems]
+    [catalogItems, findMatchingInvoiceLine, parentItemName]
   );
 
   // Copy (Ctrl+C)
@@ -875,7 +1248,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     }
 
     if (isSinglePasteVal && selectionBox.isMultiCell) {
-      // Broadcast single value across entire selection range
       const fillVal = lines[0][0];
       for (let r = selectionBox.minRow; r <= selectionBox.maxRow; r++) {
         for (let c = selectionBox.minCol; c <= selectionBox.maxCol; c++) {
@@ -886,7 +1258,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         }
       }
     } else {
-      // 2D Matrix paste starting at startR, startC
       for (let rOffset = 0; rOffset < lines.length; rOffset++) {
         const rIdx = startR + rOffset;
         const rowData = lines[rOffset];
@@ -902,7 +1273,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       }
     }
 
-    // If it was a cut, clear original cells that were not overwritten
     if (copiedRange?.isCut) {
       for (let r = copiedRange.minRow; r <= copiedRange.maxRow; r++) {
         for (let c = copiedRange.minCol; c <= copiedRange.maxCol; c++) {
@@ -942,7 +1312,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     let updated = [...rows];
 
     if (isMultiCell && minRow !== maxRow) {
-      // Google Sheets Fill Down across selection range
       const topRow = updated[minRow];
       if (!topRow) return;
 
@@ -974,13 +1343,11 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       onChangeRows(updated);
       onShowToast(`تکثیر به پایین از سطر #${minRow + 1} تا #${maxRow + 1} انجام شد.`);
     } else {
-      // Single cell or single row duplicate
       const curIdx = activeCell.row;
       const source = rows[curIdx];
       if (!source) return;
 
       if (curIdx > 0 && minCol === maxCol) {
-        // Copy value from cell directly above
         const aboveRow = rows[curIdx - 1];
         const colDef = columns[activeCell.col];
         if (aboveRow && colDef) {
@@ -992,7 +1359,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         }
       }
 
-      // Duplicate entire row
       const clone: SkuBreakdownRow = {
         ...source,
         rowId: `sku-row-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1055,11 +1421,16 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
   );
 
   // Default target warehouse
-  const defaultWarehouseKey = (activePurchaseLine?.warehouseKey || 'vitrine') as WarehouseKey;
+  const defaultWarehouseKey = (
+    activePurchaseLine?.warehouseKey ||
+    activePurchaseInvoice?.warehouseKey ||
+    'vitrine'
+  ) as WarehouseKey;
 
   // Add new row helper
   const handleAddNewRow = (afterIndex?: number) => {
-    const prevRow = rows[afterIndex ?? rows.length - 1];
+    const currentRows = rowsRef.current;
+    const prevRow = currentRows[afterIndex ?? currentRows.length - 1];
     const defaultRetail = prevRow?.retailPrice || 0;
     const defaultReseller = prevRow?.resellerPrice || 0;
     const defaultWh = prevRow?.targetWarehouse || defaultWarehouseKey;
@@ -1068,7 +1439,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     const defaultType = prevRow?.itemType || '';
 
     const newRow = createEmptyBreakdownRow(
-      rows.length,
+      currentRows.length,
       targetCost,
       parentItemName,
       defaultWh,
@@ -1080,16 +1451,20 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     );
 
     let updated: SkuBreakdownRow[];
-    if (afterIndex !== undefined && afterIndex < rows.length - 1) {
-      updated = [...rows];
+    if (afterIndex !== undefined && afterIndex < currentRows.length - 1) {
+      updated = [...currentRows];
       updated.splice(afterIndex + 1, 0, newRow);
     } else {
-      updated = [...rows, newRow];
+      updated = [...currentRows, newRow];
     }
+    rowsRef.current = updated;
     pushHistoryState(updated);
     onChangeRows(updated);
-    const targetIdx = afterIndex !== undefined ? afterIndex + 1 : rows.length;
-    selectCell(targetIdx, activeCell.col, false);
+    const targetIdx = afterIndex !== undefined ? afterIndex + 1 : currentRows.length;
+    window.setTimeout(() => {
+      selectCell(targetIdx, activeCellRef.current.col, true, updated.length);
+    }, 20);
+    return targetIdx;
   };
 
   // Duplicate a specific row
@@ -1210,7 +1585,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     rowIdx: number,
     colIdx: number
   ) => {
-    // UNDO / REDO (Ctrl+Z / Ctrl+Y / Cmd+Shift+Z)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
       if (e.shiftKey) {
@@ -1225,50 +1599,37 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       handleRedo();
       return;
     }
-
-    // COPY (Ctrl+C / Cmd+C)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
       e.preventDefault();
       handleCopy();
       return;
     }
-
-    // CUT (Ctrl+X / Cmd+X)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
       e.preventDefault();
       handleCut();
       return;
     }
-
-    // PASTE (Ctrl+V / Cmd+V)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
       e.preventDefault();
       handlePaste();
       return;
     }
-
-    // SELECT ALL (Ctrl+A / Cmd+A)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault();
       selectAll();
       return;
     }
-
-    // CTRL+D / CMD+D: Duplicate row or Google Sheets Fill Down across selection
     if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
       e.preventDefault();
       handleDuplicateOrFillDown();
       return;
     }
-
-    // DELETE / BACKSPACE: Clear cell(s) in active selection range
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       handleClearSelection();
       return;
     }
 
-    // SHIFT+ARROWS: Range Selection Expansion (Google Sheets Range Selection)
     if (e.shiftKey) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -1280,13 +1641,11 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         expandSelection(selectionRange.endRow - 1, selectionRange.endCol);
         return;
       }
-      // In RTL layout: ArrowLeft moves visually leftward (to higher column index)
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         expandSelection(selectionRange.endRow, selectionRange.endCol + 1);
         return;
       }
-      // In RTL layout: ArrowRight moves visually rightward (to lower column index)
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         expandSelection(selectionRange.endRow, selectionRange.endCol - 1);
@@ -1294,7 +1653,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       }
     }
 
-    // ENTER: Always moves to the row below
     if (e.key === 'Enter') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -1310,7 +1668,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // ARROWS: Move in all 4 directions with auto-scrolling
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (rowIdx + 1 < rows.length) selectCell(rowIdx + 1, colIdx, false);
@@ -1321,20 +1678,17 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       if (rowIdx > 0) selectCell(rowIdx - 1, colIdx, false);
       return;
     }
-    // In RTL layout: ArrowLeft moves visually to next column (leftward)
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
       if (colIdx + 1 < columns.length) selectCell(rowIdx, colIdx + 1, false);
       return;
     }
-    // In RTL layout: ArrowRight moves visually to previous column (rightward)
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       if (colIdx > 0) selectCell(rowIdx, colIdx - 1, false);
       return;
     }
 
-    // TAB / SHIFT+TAB: Move columns
     if (e.key === 'Tab') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -1347,7 +1701,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // F2 or Space: Enter edit mode
     if (e.key === 'F2' || e.key === ' ') {
       e.preventDefault();
       const colDef = columns[colIdx];
@@ -1359,14 +1712,29 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // ANY TYPED CHARACTER (letters, numbers, Persian text): Start editing immediately
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const colDef = columns[colIdx];
       if (colDef && colDef.type !== 'checkbox' && colDef.type !== 'readonly_currency') {
         e.preventDefault();
         selectCell(rowIdx, colIdx, true);
         if (colDef.type !== 'select') {
-          updateRowField(rowIdx, colDef.id, e.key as never);
+          const normalizedKey = e.key
+            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+          const initialVal =
+            colDef.type === 'number' || colDef.type === 'currency'
+              ? Number(normalizedKey.replace(/[^\d]/g, '')) || 0
+              : e.key;
+          updateRowField(rowIdx, colDef.id, initialVal as never);
+          const inp = inputRefs.current.get(`${rowIdx}_${colIdx}`);
+          if (inp instanceof HTMLInputElement) {
+            requestAnimationFrame(() => {
+              const len = inp.value.length;
+              try {
+                inp.setSelectionRange(len, len);
+              } catch {}
+            });
+          }
         }
       }
     }
@@ -1378,7 +1746,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     rowIdx: number,
     colIdx: number
   ) => {
-    // UNDO / REDO (Ctrl+Z / Cmd+Z / Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y / Cmd+Y)
     if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
       e.stopPropagation();
@@ -1396,7 +1763,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // ESCAPE: Leaves typing mode and returns to cell selection mode (DOES NOT CLOSE FULLSCREEN)
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -1406,7 +1772,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // ENTER: Commits and moves to the row below
     if (e.key === 'Enter') {
       e.preventDefault();
       setIsEditing(false);
@@ -1423,7 +1788,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       return;
     }
 
-    // TAB: Commits and moves to next column
     if (e.key === 'Tab') {
       e.preventDefault();
       setIsEditing(false);
@@ -1442,7 +1806,8 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     field: K,
     val: SkuBreakdownRow[K]
   ) => {
-    const updated = rows.map((r, idx) => {
+    const currentRows = rowsRef.current;
+    const updated = currentRows.map((r, idx) => {
       if (idx !== rowIdx) return r;
       const next = { ...r, [field]: val };
 
@@ -1459,24 +1824,22 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         }
       }
 
-      // Check parentTag discrepancy against active invoice lines
-      if (field === 'parentTag' && val) {
-        const enteredTag = String(val).trim().toLowerCase();
-        const validTags: string[] = [];
-        if (parentItemName) validTags.push(parentItemName.trim());
-        if (activePurchaseInvoice?.parentTag) validTags.push(activePurchaseInvoice.parentTag.trim());
-        if (activePurchaseInvoice?.lines) {
-          activePurchaseInvoice.lines.forEach((l) => {
-            if (l.itemName) validTags.push(l.itemName.trim());
-          });
-        }
-        if (validTags.length > 0) {
-          const isMatched = validTags.some((vt) => {
-            const normVt = vt.toLowerCase();
-            return enteredTag.includes(normVt) || normVt.includes(enteredTag);
-          });
-          if (!isMatched) {
-            onShowToast(`⚠️ هشدار مغایرت تگ: «${val}» با اقلام فاکتور خرید فعال (${validTags.join('، ')}) همخوانی ندارد!`);
+      // Check parentTag against active invoice lines & pull invoice line purchase price!
+      if (field === 'parentTag' || field === 'name') {
+        const matchedInvLine = findMatchingInvoiceLine(
+          String(field === 'parentTag' ? val : next.parentTag || ''),
+          String(field === 'name' ? val : next.name || '')
+        );
+        if (matchedInvLine) {
+          const invCost = matchedInvLine.valuationRate || matchedInvLine.unitPrice || 0;
+          if (invCost > 0) {
+            next.unitPurchasePrice = invCost;
+          }
+          if (matchedInvLine.itemType && !next.itemType) {
+            next.itemType = matchedInvLine.itemType;
+          }
+          if (matchedInvLine.itemCondition) {
+            next.condition = matchedInvLine.itemCondition;
           }
         }
       }
@@ -1514,12 +1877,15 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           if (match) {
             next.name = match.name;
             next.parentTag = match.parentTag || next.parentTag || parentItemName;
-            next.flavor = match.flavor || (match.parentTag ? match.name.replace(match.parentTag, '').replace(/^[—\s-]+/, '').trim() : next.flavor);
+            next.flavor =
+              match.flavor ||
+              (match.parentTag
+                ? match.name.replace(match.parentTag, '').replace(/^[—\s-]+/, '').trim()
+                : next.flavor);
             next.brand = match.brand || next.brand;
             next.model = match.model || next.model;
             next.retailPrice = match.retailPrice || next.retailPrice;
             next.resellerPrice = match.resellerPrice || next.resellerPrice;
-            next.parentTag = match.parentTag || next.parentTag || parentItemName;
             next.itemType = match.category || next.itemType;
             next.nicotine = match.nicotine || next.nicotine;
             next.puffCount = match.puffCount || next.puffCount;
@@ -1536,6 +1902,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           }
         }
       }
+
       if (field === 'parentTag' || field === 'name') {
         const query = String(val).trim().toLocaleLowerCase();
         const match = (catalogItems || []).find(
@@ -1555,14 +1922,26 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           next.resistanceOhm = match.resistanceOhm || next.resistanceOhm;
           next.puffCount = match.puffCount || next.puffCount;
           next.color = match.color || next.color;
-          next.unitPurchasePrice = match.valuationRate || next.unitPurchasePrice;
-          next.mwaPurchasePrice = match.valuationRate || next.mwaPurchasePrice;
+          if (!next.unitPurchasePrice) {
+            next.unitPurchasePrice = match.valuationRate || 0;
+          }
+          const existingStock = match.stockQty || 0;
+          const existingVal = match.valuationRate || 0;
+          const curCost = next.unitPurchasePrice || existingVal;
+          const curQty = next.qty > 0 ? next.qty : 1;
+          next.mwaPurchasePrice =
+            existingStock > 0 && existingVal > 0 && curCost > 0
+              ? Math.round((existingStock * existingVal + curQty * curCost) / (existingStock + curQty))
+              : curCost;
           next.retailPrice = match.retailPrice || next.retailPrice;
           next.resellerPrice = match.resellerPrice || next.resellerPrice;
+        } else if (next.unitPurchasePrice > 0) {
+          next.mwaPurchasePrice = next.unitPurchasePrice;
         }
       }
       return next;
     });
+    rowsRef.current = updated;
     pushHistoryState(updated);
     onChangeRows(updated);
   };
@@ -1578,12 +1957,20 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
     if (!row) return '';
     const colDef = columns[activeCell.col];
     if (!colDef) return '';
+    if (colDef.id === 'unitPurchasePrice') {
+      const pCost = getRowPurchaseCost(row);
+      return pCost > 0 ? `${formatCurrency(pCost)} تومان` : '';
+    }
+    if (colDef.id === 'mwaPurchasePrice') {
+      const mCost = getRowMwaCost(row);
+      return mCost > 0 ? `${formatCurrency(mCost)} تومان` : '';
+    }
     const val = row[colDef.id];
     if (val === undefined || val === null || val === '') return '';
     if (colDef.type === 'currency') return `${formatCurrency(Number(val) || 0)} تومان`;
     if (colDef.type === 'checkbox') return val ? 'فعال (بلی)' : 'غیرفعال (خیر)';
     return String(val);
-  }, [rows, activeCell, columns]);
+  }, [rows, activeCell, columns, getRowPurchaseCost, getRowMwaCost]);
 
   const containerClass = isFullscreen
     ? 'fixed inset-0 z-50 bg-slate-100 dark:bg-slate-950 flex flex-col h-screen w-screen p-3 md:p-4 overflow-hidden'
@@ -1604,7 +1991,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                  کاربرگ پذیرش کالا و تفکیک طعم‌ها (طرح کامل گوگل شیت)
+                  کاربرگ پذیرش کالا و تفکیک طعم‌ها (طرح کامل گوگل شیت با Data Validation)
                 </h3>
                 {activePurchaseInvoice && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
@@ -1619,7 +2006,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                 <span>·</span>
                 <span><strong>Escape</strong> = خروج از تایپ و انتخاب سلول</span>
                 <span>·</span>
-                <span><strong>دستگیره گوشه سلول</strong> = کشیدن ماوس برای تکثیر</span>
+                <span><strong>تنظیم ستون</strong> = ترتیب و رنگ دیتاهای Data Validation</span>
               </p>
             </div>
           </div>
@@ -1643,7 +2030,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
               )}
             </div>
 
-            {/* Fullscreen Toggle Button (Only way to exit fullscreen) */}
             <button
               type="button"
               onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1794,11 +2180,11 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
             <button
               type="button"
               onClick={() => openColumnEditor(columns[activeCell.col]?.id || 'parentTag')}
-              className="px-2.5 py-1 rounded border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-medium flex items-center gap-1"
-              title="تنظیم اعتبارسنجی و رنگ ستون انتخاب‌شده"
+              className="px-2.5 py-1 rounded border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-bold flex items-center gap-1"
+              title="تنظیم اعتبارسنجی داده (Data Validation)، ترتیب و رنگ دیتاها"
             >
               <Settings2 className="w-3 h-3" />
-              <span>تنظیم ستون</span>
+              <span>اعتبارسنجی داده (Data Validation)</span>
             </button>
 
             {knownVariants.length > 0 && (
@@ -1826,7 +2212,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
             </button>
           </div>
         </div>
-
       </div>
 
       {isFullscreen && activePurchaseInvoice && (
@@ -1844,20 +2229,22 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           </div>
           <div className="flex gap-2 overflow-auto">
             {(activePurchaseInvoice.lines || []).map((line) => {
-              const tag = line.parentTag?.trim() || line.itemName.trim();
+              // Product tag in Goods Intake is strictly the product name in the purchase invoice (line.itemName)
+              const tag = line.itemName.trim();
               const normalizedTag = tag.toLocaleLowerCase();
+              const lineCost = line.valuationRate || line.unitPrice || 0;
               const receivedQty = rows
                 .filter(
                   (row) =>
                     row.parentTag.trim().toLocaleLowerCase() === normalizedTag ||
-                    row.name.trim().toLocaleLowerCase() === line.itemName.trim().toLocaleLowerCase()
+                    row.name.trim().toLocaleLowerCase().includes(normalizedTag)
                 )
                 .reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
               const variance = receivedQty - line.qty;
               return (
                 <div
                   key={line.id}
-                  className={`min-w-[220px] rounded-lg border p-2 text-xs ${
+                  className={`min-w-[240px] rounded-lg border p-2 text-xs ${
                     variance === 0
                       ? 'border-emerald-300 bg-white dark:bg-slate-900'
                       : 'border-rose-300 bg-white dark:bg-slate-900'
@@ -1867,11 +2254,14 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                     type="button"
                     onClick={() => void copyAuditValue(tag)}
                     className="w-full flex items-center justify-between gap-2 font-semibold text-right hover:text-indigo-700"
-                    title="کپی تگ کالا برای جای‌گذاری در ستون تگ کالا"
+                    title="کپی تگ کالا (نام محصول در فاکتور)"
                   >
                     <span className="truncate">{tag}</span>
                     <ClipboardCopy className="w-3.5 h-3.5 shrink-0" />
                   </button>
+                  <div className="mt-1 text-[11px] font-mono text-indigo-700 dark:text-indigo-300">
+                    فی خرید فاکتور: {formatCurrency(lineCost)} تومان
+                  </div>
                   <div className="mt-1 flex justify-between text-slate-600 dark:text-slate-300">
                     <span>فاکتور: {line.qty}</span>
                     <span>پذیرش: {receivedQty}</span>
@@ -1887,7 +2277,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       )}
 
       {/* =====================================================================
-          SPREADSHEET GRID (GOOGLE SHEETS TABLE WITH 18 VISIBLE SPEC COLUMNS)
+          SPREADSHEET GRID (GOOGLE SHEETS TABLE WITH DATA VALIDATION)
          ===================================================================== */}
       <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[460px]">
         <div
@@ -1895,10 +2285,8 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
           className="flex-1 overflow-auto max-h-[640px] select-none"
         >
           <table className="border-collapse text-xs text-right w-max min-w-full">
-            {/* Google Sheets Header with Letters (A, B, C...) */}
             <thead className="sticky top-0 z-20 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-b border-slate-300 dark:border-slate-700 shadow-xs">
               <tr>
-                {/* Row Number Sticky Header corner */}
                 <th
                   onClick={selectAll}
                   className="sticky right-0 z-30 w-12 py-1 px-1 border-l border-b border-slate-300 dark:border-slate-700 text-center font-mono text-slate-500 bg-slate-200 dark:bg-slate-800 font-bold text-[11px] cursor-pointer hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors select-none"
@@ -1923,12 +2311,11 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       setContextMenu({ x: event.clientX, y: event.clientY, rowIdx: -1, colIdx });
                     }}
                     className={`py-1.5 px-2 border-l border-b border-slate-300 dark:border-slate-700 font-semibold cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors select-none ${ch.width}`}
-                    title={`انتخاب ستون (${ch.label})`}
-                    style={{ backgroundColor: gridConfig.columnColors?.[ch.id] }}
+                    title={`انتخاب ستون (${ch.label}) — راست‌کلیک برای تنظیم اعتبارسنجی داده`}
                   >
-                    <div className="flex items-center justify-start text-[11px]">
+                    <div className="flex items-center justify-between text-[11px] gap-1">
                       <span className="truncate">{ch.label}</span>
-                      <span className="mr-1 text-[9px] text-slate-400">{ch.col}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">{ch.col}</span>
                     </div>
                   </th>
                 ))}
@@ -1938,7 +2325,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
               </tr>
             </thead>
 
-            {/* Spreadsheet Body Rows */}
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {rows.map((row, rowIdx) => {
                 const isRowActive = activeCell.row === rowIdx;
@@ -1948,6 +2334,9 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                   dragHoverRow !== null &&
                   rowIdx > dragStart.row &&
                   rowIdx <= dragHoverRow;
+
+                const resolvedPurchasePrice = getRowPurchaseCost(row);
+                const resolvedMwaPrice = getRowMwaCost(row);
 
                 return (
                   <tr
@@ -1961,7 +2350,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       isRowActive ? 'bg-indigo-50/25 dark:bg-indigo-950/20' : ''
                     }`}
                   >
-                    {/* Row Header (#1, 2, 3...) Sticky on right */}
                     <td
                       onClick={() => selectRow(rowIdx)}
                       onMouseDown={(e) => {
@@ -1974,7 +2362,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       {rowIdx + 1}
                     </td>
 
-                    {/* Columns A through P */}
                     {columns.map((colDef, colIdx) => {
                       const isCellActive = activeCell.row === rowIdx && activeCell.col === colIdx;
                       const isCellEditing = isCellActive && isEditing;
@@ -1994,10 +2381,8 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       const cellKey = `${rowIdx}_${colIdx}`;
                       const rawValue = row[colDef.id];
 
-                      // Multi-cell border edges (Google Sheets bounding box)
                       const isTopBorder = isInSelection && selectionBox.isMultiCell && rowIdx === selectionBox.minRow;
                       const isBottomBorder = isInSelection && selectionBox.isMultiCell && rowIdx === selectionBox.maxRow;
-                      // In RTL: right is minCol, left is maxCol
                       const isRightBorder = isInSelection && selectionBox.isMultiCell && colIdx === selectionBox.minCol;
                       const isLeftBorder = isInSelection && selectionBox.isMultiCell && colIdx === selectionBox.maxCol;
 
@@ -2009,12 +2394,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       return (
                         <td
                           key={colDef.id}
-                          style={{
-                            backgroundColor:
-                              gridConfig.cellColors?.[`${row.rowId}:${colDef.id}`] ||
-                              gridConfig.cellColors?.[`${rowIdx}:${colDef.id}`] ||
-                              gridConfig.columnColors?.[colDef.id],
-                          }}
                           ref={(el) => setCellTdRef(cellKey, el)}
                           tabIndex={isCellEditing ? -1 : 0}
                           onMouseDown={(e) => {
@@ -2090,7 +2469,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               : ''
                           }`}
                         >
-                          {/* CELL EDIT MODE VS SELECTION DISPLAY */}
                           {colDef.type === 'readonly_currency' ? (
                             <div
                               onClick={() => {
@@ -2098,18 +2476,24 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                                   onShowToast('🔒 این ستون محاسباتی و بر اساس فاکتور خرید قفل است.');
                                 }
                               }}
-                              className="w-full h-8 px-2 flex items-center justify-between font-mono bg-slate-50/70 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-xs"
+                              className="w-full h-8 px-2 flex items-center justify-between font-mono bg-slate-50/70 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 text-xs font-bold"
                             >
                               <span className="tabular-nums">
                                 {colDef.id === 'mwaPurchasePrice' ? (
-                                  getRowMwaCost(row) ? `${formatCurrency(getRowMwaCost(row))} ت` : <span className="text-slate-300">۰</span>
-                                ) : rawValue ? (
-                                  `${formatCurrency(Number(rawValue))} ت`
+                                  resolvedMwaPrice > 0 ? (
+                                    `${formatCurrency(resolvedMwaPrice)} ت`
+                                  ) : (
+                                    <span className="text-slate-300 font-normal">۰</span>
+                                  )
+                                ) : resolvedPurchasePrice > 0 ? (
+                                  `${formatCurrency(resolvedPurchasePrice)} ت`
                                 ) : (
-                                  <span className="text-slate-300">۰</span>
+                                  <span className="text-slate-300 font-normal">۰</span>
                                 )}
                               </span>
-                              <span className="text-[10px] text-slate-400 opacity-60 ml-1" title="فیلد محاسباتی قفل">🔒</span>
+                              <span className="text-[10px] text-slate-400 opacity-60 ml-1" title="فیلد محاسباتی از فاکتور خرید">
+                                🔒
+                              </span>
                             </div>
                           ) : colDef.type === 'currency' ? (
                             <CurrencyInput
@@ -2118,6 +2502,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -2131,7 +2516,14 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               onClick={(e) => e.stopPropagation()}
                               onChange={(val) => updateRowField(rowIdx, colDef.id, val as never)}
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                               placeholder="۰"
                               className="w-full h-8 px-2 font-mono font-bold text-left bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none tabular-nums text-xs select-text cursor-text"
                             />
@@ -2144,6 +2536,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -2160,9 +2553,16 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                                 updateRowField(rowIdx, colDef.id, (cleaned ? Math.max(0, Number(cleaned)) : 0) as never);
                               }}
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                               placeholder="۰"
-                              className="w-full h-8 px-2 font-mono font-bold text-center bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none tabular-nums text-xs select-text cursor-text"
+                              className="w-full h-8 px-1 font-mono font-bold text-center bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none tabular-nums text-xs select-text cursor-text"
                             />
                           ) : colDef.type === 'text' ? (
                             <input
@@ -2172,6 +2572,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -2185,14 +2586,32 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => updateRowField(rowIdx, colDef.id, e.target.value as never)}
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
-                              placeholder={colDef.label.split('.')[1]?.trim() || ''}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
+                              placeholder={
+                                colDef.id === 'sku'
+                                  ? 'اسکن یا تایپ SKU...'
+                                  : colDef.id === 'expiryDate'
+                                  ? '1406/05'
+                                  : '...'
+                              }
                               className={`w-full h-8 px-2 bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-xs select-text cursor-text ${
-                                colDef.align === 'left' ? 'font-mono text-left' : colDef.align === 'center' ? 'text-center font-mono' : 'text-right font-medium'
+                                colDef.align === 'left'
+                                  ? 'font-mono text-left'
+                                  : colDef.align === 'center'
+                                  ? 'text-center font-mono'
+                                  : 'text-right font-medium'
                               }`}
                             />
-                          ) : isCellEditing && colDef.type === 'select' ? (
+                          ) : colDef.type === 'select' ? (
                             <GridSearchableSelect
+                              ref={(el) => setInputRef(cellKey, el)}
                               value={
                                 colDef.id === 'targetWarehouse'
                                   ? warehouses.find((w) => w.key === rawValue)?.name || String(rawValue || '')
@@ -2203,23 +2622,71 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                                   ? warehouses.map((w) => w.name)
                                   : (colDef.options || []).filter(Boolean)
                               }
-                              onChange={(val) => {
+                              optionColors={colDef.optionColors}
+                              isOpen={isCellEditing}
+                              align={colDef.align}
+                              allowCreate={colDef.id !== 'targetWarehouse' && colDef.id !== 'condition'}
+                              allowLiveChange={colDef.id !== 'targetWarehouse'}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
+                                  setActiveCell({ row: rowIdx, col: colIdx });
+                                  setSelectionRange({
+                                    startRow: rowIdx,
+                                    startCol: colIdx,
+                                    endRow: rowIdx,
+                                    endCol: colIdx,
+                                  });
+                                  setIsEditing(true);
+                                }
+                              }}
+                              onOpen={() => {
+                                activeCellRef.current = { row: rowIdx, col: colIdx };
+                                setActiveCell({ row: rowIdx, col: colIdx });
+                                setSelectionRange({
+                                  startRow: rowIdx,
+                                  startCol: colIdx,
+                                  endRow: rowIdx,
+                                  endCol: colIdx,
+                                });
+                                setIsEditing(true);
+                              }}
+                              onCreateOption={(newOpt) => {
+                                const trimmed = newOpt.trim();
+                                if (!trimmed) return;
+                                setGridConfig((current) => {
+                                  const existing =
+                                    current.validationOptions?.[colDef.id] ||
+                                    (colDef.options || []).filter(Boolean);
+                                  return {
+                                    ...current,
+                                    validationOptions: {
+                                      ...current.validationOptions,
+                                      [colDef.id]: Array.from(new Set([trimmed, ...existing])),
+                                    },
+                                  };
+                                });
+                              }}
+                              onChange={(val, meta) => {
                                 if (colDef.id === 'targetWarehouse') {
-                                  const found = warehouses.find((w) => w.name === val);
-                                  updateRowField(rowIdx, colDef.id, (found ? found.key : val) as never);
+                                  const found = warehouses.find((w) => w.name === val || w.key === val);
+                                  if (found) {
+                                    updateRowField(rowIdx, colDef.id, found.key as never);
+                                  }
                                 } else {
                                   updateRowField(rowIdx, colDef.id, val as never);
                                 }
-                                setIsEditing(false);
-                                selectCell(rowIdx, colIdx, false);
+                                if (!meta?.keepEditing) {
+                                  setIsEditing(false);
+                                }
                               }}
                               onCommitAndMoveDown={() => {
                                 setIsEditing(false);
-                                if (rowIdx + 1 < rows.length) {
+                                if (rowIdx + 1 < rowsRef.current.length) {
                                   selectCell(rowIdx + 1, colIdx, false);
                                 } else {
                                   handleAddNewRow(rowIdx);
-                                  setTimeout(() => selectCell(rowIdx + 1, colIdx, true), 40);
                                 }
                               }}
                               onCommitAndMoveTab={(shift) => {
@@ -2231,11 +2698,14 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                                 }
                               }}
                               onClose={() => {
-                                setIsEditing(false);
-                                const td = cellTdRefs.current.get(cellKey);
-                                if (td) td.focus({ preventScroll: true });
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
                               }}
-                              placeholder={`انتخاب ${colDef.label.split('.')[1]?.trim() || ''}...`}
+                              placeholder={`انتخاب ${colDef.label.split('(')[0]?.trim() || colDef.label}...`}
                             />
                           ) : colDef.type === 'checkbox' ? (
                             <div className="w-full h-8 flex items-center justify-center">
@@ -2248,41 +2718,19 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                                   setIsEditing(false);
                                 }}
                                 onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                                onBlur={() => setIsEditing(false)}
+                                onBlur={() => {
+                                  if (
+                                    activeCellRef.current.row === rowIdx &&
+                                    activeCellRef.current.col === colIdx
+                                  ) {
+                                    setIsEditing(false);
+                                  }
+                                }}
                                 className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                               />
                             </div>
-                          ) : (
-                            <div
-                              onClick={(e) => {
-                                if (isCellActive) {
-                                  e.stopPropagation();
-                                  selectCell(rowIdx, colIdx, true);
-                                }
-                              }}
-                              className={`w-full h-8 px-2 flex items-center truncate cursor-cell select-text ${
-                                colDef.align === 'left'
-                                  ? 'justify-start font-mono font-bold'
-                                  : colDef.align === 'center'
-                                  ? 'justify-center font-mono'
-                                  : 'justify-start font-medium'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <span className="truncate">
-                                  {colDef.id === 'targetWarehouse'
-                                    ? warehouses.find((w) => w.key === rawValue)?.name || String(rawValue || '—')
-                                    : rawValue !== undefined && rawValue !== null && String(rawValue) !== ''
-                                    ? String(rawValue)
-                                    : <span className="text-slate-300 dark:text-slate-600 select-none text-[10px]">—</span>
-                                  }
-                                </span>
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500 mr-1 select-none font-bold">▾</span>
-                              </div>
-                            </div>
-                          )}
+                          ) : null}
 
-                          {/* GOOGLE SHEETS FILL HANDLE (Bottom-Left in RTL) */}
                           {isFillCorner && (
                             <div
                               onMouseDown={(e) => {
@@ -2300,7 +2748,6 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                       );
                     })}
 
-                    {/* Actions Column: Duplicate / Delete */}
                     <td className="w-16 p-1 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -2351,7 +2798,7 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
                 {formatCurrency(
                   rows
                     .filter((r) => (r.sku.trim() || r.name.trim()) && r.qty > 0)
-                    .reduce((sum, r) => sum + (r.qty * (r.unitPurchasePrice || targetCost)), 0)
+                    .reduce((sum, r) => sum + r.qty * getRowPurchaseCost(r), 0)
                 )} تومان
               </strong>
             </div>
@@ -2385,36 +2832,36 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
       </div>
 
       {/* =====================================================================
-          RIGHT-CLICK CONTEXT MENU (GOOGLE SHEETS / EXCEL STYLE)
+          RIGHT-CLICK CONTEXT MENU
          ===================================================================== */}
       {contextMenu?.rowIdx === -1 ? (
         <div
           style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-50 min-w-[210px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs"
+          className="fixed z-50 min-w-[230px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs"
         >
           <button
             type="button"
             onClick={() => openColumnEditor(columns[contextMenu.colIdx]?.id || 'parentTag')}
-            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-slate-700 text-right"
+            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-slate-700 text-right font-semibold"
           >
             <Settings2 className="w-4 h-4 text-indigo-600" />
-            تنظیم ستون و اعتبارسنجی داده
+            تنظیم اعتبارسنجی داده (Data Validation)
           </button>
         </div>
       ) : contextMenu && (
         <div
           style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed z-50 min-w-[220px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs text-slate-800 dark:text-slate-100 divide-y divide-slate-100 dark:divide-slate-700 select-none"
+          className="fixed z-50 min-w-[230px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl py-1 text-xs text-slate-800 dark:text-slate-100 divide-y divide-slate-100 dark:divide-slate-700 select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="py-1">
             <button
               type="button"
               onClick={() => openColumnEditor(columns[contextMenu.colIdx]?.id || 'parentTag')}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-slate-700 text-right text-indigo-700 dark:text-indigo-300"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-slate-700 text-right text-indigo-700 dark:text-indigo-300 font-semibold"
             >
               <Settings2 className="w-3.5 h-3.5" />
-              <span>ویرایش ستون / اعتبارسنجی</span>
+              <span>تنظیم اعتبارسنجی داده (Data Validation)</span>
             </button>
             <button
               type="button"
@@ -2548,22 +2995,30 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
         </div>
       )}
 
+      {/* =====================================================================
+          GOOGLE SHEETS DATA VALIDATION SIDEBAR (Option Ordering & Data Colors)
+         ===================================================================== */}
       {isColumnEditorOpen && activeEditorColumn && (
         <>
           <button
             type="button"
-            aria-label="بستن پنل تنظیم ستون"
+            aria-label="بستن پنل اعتبارسنجی داده"
             onClick={() => setIsColumnEditorOpen(false)}
             className="fixed inset-0 z-[60] bg-slate-950/30 cursor-default"
           />
           <aside
             dir="rtl"
-            className="fixed right-0 top-0 z-[61] flex h-screen w-full max-w-[390px] flex-col border-l border-slate-300 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            className="fixed right-0 top-0 z-[61] flex h-screen w-full max-w-[420px] flex-col border-l border-slate-300 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
           >
             <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
               <div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100">ویرایش ستون</h3>
-                <p className="mt-1 text-xs text-slate-500">{activeEditorColumn.label}</p>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2 text-sm">
+                  <Settings2 className="w-4 h-4 text-indigo-600" />
+                  <span>قوانین اعتبارسنجی داده (Data Validation)</span>
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  تنظیم ترتیب نمایش و رنگ اختصاصی هر داده (مشابه چیپ‌های گوگل شیت)
+                </p>
               </div>
               <button
                 type="button"
@@ -2575,85 +3030,189 @@ export const GoogleSheetsIntakeGrid: React.FC<GoogleSheetsIntakeGridProps> = ({
               </button>
             </header>
 
-            <div className="flex-1 space-y-5 overflow-auto p-4">
-              <section className="space-y-2">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">اعتبارسنجی داده (Dropdown)</h4>
-                {activeEditorColumn.type === 'text' || activeEditorColumn.type === 'select' ? (
-                  <>
-                    <p className="text-xs leading-5 text-slate-500">
-                      هر گزینه را در یک خط وارد کنید. با خالی گذاشتن فهرست، نوع پیش‌فرض ستون حفظ می‌شود.
-                    </p>
-                    <textarea
-                      value={validationDraft}
-                      onChange={(event) => setValidationDraft(event.target.value)}
-                      rows={8}
-                      className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                      placeholder={'گزینه اول\nگزینه دوم'}
-                    />
-                    <button
-                      type="button"
-                      onClick={saveValidationOptions}
-                      className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-700"
-                    >
-                      ذخیره گزینه‌های فهرست
-                    </button>
-                  </>
-                ) : (
-                  <p className="rounded-lg bg-slate-100 p-3 text-xs leading-5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    این ستون عددی یا محاسباتی است؛ برای حفظ محاسبات، نوع دادهٔ آن قابل تبدیل به فهرست انتخابی نیست.
-                  </p>
-                )}
-              </section>
-
-              <section className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">رنگ‌بندی ستون و سلول‌ها</h4>
-                <label className="flex items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-300">
-                  رنگ پس‌زمینه
-                  <input
-                    type="color"
-                    value={colorDraft}
-                    onChange={(event) => setColorDraft(event.target.value)}
-                    className="h-9 w-14 cursor-pointer rounded border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-950"
-                  />
+            <div className="flex-1 space-y-4 overflow-auto p-4 text-xs">
+              {/* Column Selector inside Sidebar */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  ستون مورد نظر برای اعتبارسنجی داده:
                 </label>
-                <button
-                  type="button"
-                  onClick={() => applyColumnColor(colorDraft)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+                <select
+                  value={activeEditorColumn.id}
+                  onChange={(e) => setEditingColumnId(e.target.value as keyof SkuBreakdownRow)}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-2 bg-slate-50 dark:bg-slate-800 font-semibold text-xs"
                 >
-                  <Paintbrush className="h-4 w-4" />
-                  اعمال رنگ به کل ستون
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applySelectionColor(colorDraft)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-                >
-                  <Paintbrush className="h-4 w-4" />
-                  اعمال رنگ به محدودهٔ انتخاب‌شده
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGridConfig((current) => {
-                      const columnColors = { ...current.columnColors };
-                      const cellColors = { ...current.cellColors };
-                      delete columnColors[activeEditorColumn.id];
-                      Object.keys(cellColors).forEach((key) => {
-                        if (key.endsWith(`:${activeEditorColumn.id}`)) delete cellColors[key];
-                      });
-                      return { ...current, columnColors, cellColors };
-                    });
-                  }}
-                  className="w-full rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                >
-                  پاک کردن رنگ این ستون
-                </button>
-              </section>
+                  {columns
+                    .filter((c) => c.type === 'select' || c.type === 'text')
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        ستون {c.col} — {c.label}
+                      </option>
+                    ))}
+                </select>
+              </div>
 
-              <p className="text-[11px] leading-5 text-slate-500">
-                برای تغییر ترتیب، سربرگ ستون را با ماوس بکشید و روی جایگاه جدید رها کنید. تنظیمات در همین مرورگر ذخیره می‌شود.
-              </p>
+              {activeEditorColumn.type === 'select' || activeEditorColumn.type === 'text' ? (
+                <>
+                  {/* Add New Option to Data Validation */}
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">
+                      + افزودن گزینه جدید به فهرست این ستون:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newOptionInput}
+                        onChange={(e) => setNewOptionInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddValidationOption();
+                          }
+                        }}
+                        placeholder="نام گزینه (مثلاً 0.6 Ω یا سالت ویگاد)..."
+                        className="flex-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500"
+                      />
+                      <input
+                        type="color"
+                        value={newOptionColor}
+                        onChange={(e) => setNewOptionColor(e.target.value)}
+                        title="رنگ این گزینه داده"
+                        className="h-8 w-10 cursor-pointer rounded border border-slate-300 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddValidationOption}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold shrink-0"
+                      >
+                        افزودن
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Ordered Options List with Individual Data Colors */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200">
+                        گزینه‌ها، ترتیب نمایش و رنگ دیتاها ({activeEditorOptions.length})
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={handleResetColumnValidation}
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-rose-600"
+                        title="بازنشانی ترتیب و رنگ دیتاهای این ستون"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>بازنشانی پیش‌فرض</span>
+                      </button>
+                    </div>
+
+                    {activeEditorOptions.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 p-4 text-center text-slate-400">
+                        هنوز گزینه‌ای برای این ستون ثبت نشده است. از کادر بالا گزینه جدید اضافه کنید.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-0.5">
+                        {activeEditorOptions.map((opt, idx) => {
+                          const currentColor =
+                            gridConfig.optionColors?.[activeEditorColumn.id]?.[opt] || '';
+                          return (
+                            <div
+                              key={opt}
+                              className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col gap-1.5 shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                {/* Option Preview Chip */}
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="font-mono text-[10px] text-slate-400 w-5 text-center">
+                                    {idx + 1}
+                                  </span>
+                                  {currentColor && (
+                                    <span
+                                      className="w-3 h-3 rounded-full shrink-0 border border-black/15"
+                                      style={{ backgroundColor: currentColor }}
+                                    />
+                                  )}
+                                  <span
+                                    className="truncate font-semibold"
+                                    style={currentColor ? { color: currentColor } : undefined}
+                                  >
+                                    {opt}
+                                  </span>
+                                </div>
+
+                                {/* Order Up / Down & Delete Controls */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => handleMoveValidationOption(idx, 'up')}
+                                    className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30"
+                                    title="انتقال به بالا"
+                                  >
+                                    <ArrowUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === activeEditorOptions.length - 1}
+                                    onClick={() => handleMoveValidationOption(idx, 'down')}
+                                    className="p-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30"
+                                    title="انتقال به پایین"
+                                  >
+                                    <ArrowDown className="w-3 h-3" />
+                                  </button>
+                                  <input
+                                    type="color"
+                                    value={currentColor || '#4f46e5'}
+                                    onChange={(e) => handleSetOptionColor(opt, e.target.value)}
+                                    title="انتخاب رنگ دلخواه برای این داده"
+                                    className="h-6 w-7 cursor-pointer rounded border border-slate-200 bg-white p-0.5 dark:border-slate-700 dark:bg-slate-900"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteValidationOption(opt)}
+                                    className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                                    title="حذف این گزینه از فهرست"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Quick Preset Chip Colors Row */}
+                              <div className="flex items-center gap-1 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                <span className="text-[10px] text-slate-400 ml-1">رنگ دیتا:</span>
+                                {DATA_CHIP_COLOR_PALETTE.map((preset) => {
+                                  const isSelected = currentColor === preset.value;
+                                  return (
+                                    <button
+                                      key={preset.label}
+                                      type="button"
+                                      onClick={() => handleSetOptionColor(opt, preset.value)}
+                                      title={preset.label}
+                                      className={`w-4 h-4 rounded-full border transition-transform ${
+                                        isSelected
+                                          ? 'scale-125 ring-2 ring-indigo-500 border-white'
+                                          : 'border-slate-300 dark:border-slate-600 hover:scale-110'
+                                      }`}
+                                      style={{
+                                        backgroundColor: preset.value || '#e2e8f0',
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="rounded-lg bg-slate-100 p-3 text-xs leading-5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  این ستون مربوط به قیمت یا اعداد محاسباتی است و بر اساس منطق سیستم، نیازی به اعتبارسنجی داده (Data Validation) ندارد.
+                </p>
+              )}
             </div>
           </aside>
         </>

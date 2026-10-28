@@ -227,7 +227,7 @@ export const OperationalCalendarModule: React.FC<OperationalCalendarModuleProps>
     });
 
     // 3. Monthly Fixed Expense Templates
-    const currentYm = (selectedDate || formatPersianDate(new Date())).slice(0, 7) || '۱۴۰۴/۰۸';
+    const currentYm = (selectedDate || formatPersianDate(new Date())).slice(0, 7);
     recurringTemplates.forEach((tmpl) => {
       const dayPadded = new Intl.NumberFormat('fa-IR', { minimumIntegerDigits: 2 }).format(
         tmpl.dueDayOfMonth

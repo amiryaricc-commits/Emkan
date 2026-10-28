@@ -36,6 +36,8 @@ import {
   Wind,
   X,
   Sliders,
+  Save,
+  FolderOpen,
 } from 'lucide-react';
 import { PurchaseInvoiceManager } from './PurchaseInvoiceManager';
 import {
@@ -82,6 +84,30 @@ export type InventoryWmsTab =
   | 'theft_fraud'
   | 'categories_sectors'
   | 'festivals_bundles';
+
+export interface SkuIntakeDraftRecord {
+  id: string;
+  title: string;
+  savedAt: string;
+  selectedPurchaseLineKey: string;
+  purchaseBillNo?: string;
+  supplierName?: string;
+  rows: SkuBreakdownRow[];
+}
+
+const SKU_INTAKE_DRAFTS_KEY = 'emkan.sku_intake.drafts.v1';
+
+function loadSkuIntakeDrafts(): SkuIntakeDraftRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(SKU_INTAKE_DRAFTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 interface InventoryWmsModuleProps {
   productionMode: boolean;
@@ -256,6 +282,37 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
   const skuInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const qtyInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const [recentlyCreatedPurchases, setRecentlyCreatedPurchases] = useState<PurchaseInvoiceRecord[]>([]);
+  const [intakeDrafts, setIntakeDrafts] = useState<SkuIntakeDraftRecord[]>(loadSkuIntakeDrafts);
+  const [activeIntakeDraftId, setActiveIntakeDraftId] = useState<string | null>(null);
+  const [isIntakeDraftsModalOpen, setIsIntakeDraftsModalOpen] = useState(false);
+  const [cleanIntakeSnapshot, setCleanIntakeSnapshot] = useState<string>('');
+  const [isPurchaseInvoiceDirty, setIsPurchaseInvoiceDirty] = useState(false);
+  const savePurchaseDraftRef = useRef<(() => boolean) | null>(null);
+  const [pendingExitTargetTab, setPendingExitTargetTab] = useState<InventoryWmsTab | null>(null);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(SKU_INTAKE_DRAFTS_KEY, JSON.stringify(intakeDrafts));
+    } catch {
+      // ignore storage errors
+    }
+  }, [intakeDrafts]);
+
+  const effectivePendingPurchases = useMemo(() => {
+    const map = new Map<string, PurchaseInvoiceRecord>();
+    for (const p of recentlyCreatedPurchases) {
+      if (p.docstatus !== 2 && !p.skuBreakdownCompleted) map.set(p.id, p);
+    }
+    for (const p of pendingBreakdownPurchases) {
+      if (p.docstatus !== 2 && !p.skuBreakdownCompleted) map.set(p.id, p);
+    }
+    for (const p of purchaseInvoices) {
+      if (p.docstatus === 1 && !p.skuBreakdownCompleted) map.set(p.id, p);
+    }
+    return Array.from(map.values());
+  }, [recentlyCreatedPurchases, pendingBreakdownPurchases, purchaseInvoices]);
+
   const [selectedPurchaseId, selectedLineId] = useMemo(() => {
     if (!selectedPurchaseLineKey) return ['', ''];
     const parts = selectedPurchaseLineKey.split(':::');
@@ -263,8 +320,12 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
   }, [selectedPurchaseLineKey]);
 
   const activePurchaseInvoice = useMemo(() => {
-    return pendingBreakdownPurchases.find((p) => p.id === selectedPurchaseId) || null;
-  }, [pendingBreakdownPurchases, selectedPurchaseId]);
+    return (
+      effectivePendingPurchases.find((p) => p.id === selectedPurchaseId) ||
+      purchaseInvoices.find((p) => p.id === selectedPurchaseId) ||
+      null
+    );
+  }, [effectivePendingPurchases, purchaseInvoices, selectedPurchaseId]);
 
   const activePurchaseLine = useMemo(() => {
     if (!activePurchaseInvoice || !selectedLineId) return null;
@@ -283,11 +344,21 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
     if (activePurchaseLine) {
       return activePurchaseLine.valuationRate || activePurchaseLine.unitPrice || 0;
     }
+    if (activePurchaseInvoice?.lines && activePurchaseInvoice.lines.length === 1) {
+      return (
+        activePurchaseInvoice.lines[0].valuationRate ||
+        activePurchaseInvoice.lines[0].unitPrice ||
+        0
+      );
+    }
     return 0;
-  }, [activePurchaseLine]);
+  }, [activePurchaseLine, activePurchaseInvoice]);
 
   const parentItemName = useMemo(() => {
     if (activePurchaseLine) return activePurchaseLine.itemName;
+    if (activePurchaseInvoice?.lines && activePurchaseInvoice.lines.length === 1) {
+      return activePurchaseInvoice.lines[0].itemName;
+    }
     return activePurchaseInvoice?.itemsSummary || '';
   }, [activePurchaseLine, activePurchaseInvoice]);
 
@@ -310,30 +381,238 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
     });
   }, [items, parentItemName]);
 
-  const handleSelectPurchaseLine = (key: string) => {
+  const buildBreakdownRowFromInvoiceLine = (
+    line: NonNullable<PurchaseInvoiceRecord['lines']>[number],
+    idx: number,
+    fallbackWh: WarehouseKey
+  ): SkuBreakdownRow => {
+    const cleanProductName = line.itemName.trim();
+    const lineCost = line.valuationRate || line.unitPrice || 0;
+    const lineCategory = line.itemType || '';
+    const lineWh = (line.warehouseKey || fallbackWh || 'vitrine') as WarehouseKey;
+    const catalogMatch = items.find(
+      (it) =>
+        it.name.trim().toLocaleLowerCase() === cleanProductName.toLocaleLowerCase() ||
+        it.parentTag?.trim().toLocaleLowerCase() === cleanProductName.toLocaleLowerCase()
+    );
+    const existingStock = catalogMatch?.stockQty || 0;
+    const existingVal = catalogMatch?.valuationRate || 0;
+    const mwaCost =
+      existingStock > 0 && existingVal > 0 && lineCost > 0
+        ? Math.round((existingStock * existingVal + (line.qty || 1) * lineCost) / (existingStock + (line.qty || 1)))
+        : lineCost || existingVal;
+
+    const baseRow = createEmptyBreakdownRow(
+      idx,
+      lineCost,
+      cleanProductName,
+      lineWh,
+      catalogMatch?.retailPrice || 0,
+      catalogMatch?.resellerPrice || 0,
+      catalogMatch?.brand || cleanProductName.split(' ')[0] || '',
+      lineCategory || catalogMatch?.category || '',
+      catalogMatch?.model || '',
+      line.qty || 0,
+      catalogMatch?.flavor || '',
+      catalogMatch?.festivalPrice || 0,
+      mwaCost
+    );
+
+    return {
+      ...baseRow,
+      sku: catalogMatch?.sku || '',
+      condition: line.itemCondition || catalogMatch?.condition || 'آکبند',
+      nicotine: catalogMatch?.nicotine || '',
+      liquidVolumeMl: catalogMatch?.liquidVolumeMl ? String(catalogMatch.liquidVolumeMl) : '',
+      resistanceOhm: catalogMatch?.resistanceOhm || '',
+      puffCount: catalogMatch?.puffCount || '',
+      color: catalogMatch?.color || '',
+      batteryCapacityMah: catalogMatch?.batteryCapacityMah || 0,
+    };
+  };
+
+  const handleSelectPurchaseLine = (key: string, directPinv?: PurchaseInvoiceRecord) => {
     setSelectedPurchaseLineKey(key);
     if (!key) {
-      setBreakdownRows(Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx)));
+      const emptyRows = Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx));
+      setBreakdownRows(emptyRows);
+      setCleanIntakeSnapshot('');
       return;
     }
     const parts = key.split(':::');
     const pId = parts[0];
     const lId = parts[1];
-    const pInv = (purchaseInvoices.length > 0 ? purchaseInvoices : pendingBreakdownPurchases).find((p) => p.id === pId);
+    const pInv =
+      directPinv ||
+      effectivePendingPurchases.find((p) => p.id === pId) ||
+      purchaseInvoices.find((p) => p.id === pId);
     const pLine = pInv?.lines?.find((l) => l.id === lId);
-    const targetWh = (pLine?.warehouseKey || 'vitrine') as WarehouseKey;
+    const targetWh = (pLine?.warehouseKey || pInv?.warehouseKey || 'vitrine') as WarehouseKey;
     if (pInv) {
-      setBreakdownRows(
-        Array.from({ length: 30 }, (_, idx) =>
-          createEmptyBreakdownRow(idx, pLine?.unitPrice || 0, pLine?.itemName || '', targetWh)
-        )
-      );
+      let nextRows: SkuBreakdownRow[];
+      if (pLine) {
+        const firstRow = buildBreakdownRowFromInvoiceLine(pLine, 0, targetWh);
+        const lineCost = pLine.valuationRate || pLine.unitPrice || 0;
+        nextRows = [
+          firstRow,
+          ...Array.from({ length: 29 }, (_, idx) =>
+            createEmptyBreakdownRow(
+              idx + 1,
+              lineCost,
+              pLine.itemName.trim(),
+              targetWh,
+              0,
+              0,
+              '',
+              pLine.itemType || '',
+              '',
+              0,
+              '',
+              0,
+              lineCost
+            )
+          ),
+        ];
+      } else {
+        const invLines = (pInv.lines || []).filter((l) => !l.skuBreakdownCompleted);
+        const populatedRows = invLines.map((line, idx) =>
+          buildBreakdownRowFromInvoiceLine(line, idx, targetWh)
+        );
+        const singleLineCost =
+          invLines.length === 1 ? invLines[0].valuationRate || invLines[0].unitPrice || 0 : 0;
+        const singleLineName = invLines.length === 1 ? invLines[0].itemName.trim() : '';
+        const remainingCount = Math.max(5, 30 - populatedRows.length);
+        nextRows = [
+          ...populatedRows,
+          ...Array.from({ length: remainingCount }, (_, idx) =>
+            createEmptyBreakdownRow(
+              populatedRows.length + idx,
+              singleLineCost,
+              singleLineName,
+              targetWh,
+              0,
+              0,
+              '',
+              invLines.length === 1 ? invLines[0].itemType || '' : '',
+              '',
+              0,
+              '',
+              0,
+              singleLineCost
+            )
+          ),
+        ];
+      }
+      setBreakdownRows(nextRows);
+      setCleanIntakeSnapshot('');
       onShowToast(
-        pLine
-          ? `فاکتور ${pInv.billNo} انتخاب شد؛ شیت ۳۰ سطری آماده است. تگ کالا را از گزارش مغایرت کپی کنید.`
-          : `فاکتور ${pInv.billNo} انتخاب شد؛ برای ورود، تگ کالا را از گزارش مغایرت کپی کنید.`
+        `فاکتور ${pInv.billNo} در کاربرگ پذیرش کالا بارگذاری شد (تگ کالا و قیمت خرید درج گردید).`
       );
     }
+  };
+
+  // Compute current intake dirty state
+  const currentIntakeSnapshot = useMemo(() => {
+    const activeRows = breakdownRows.filter(
+      (r) =>
+        r.sku.trim() !== '' ||
+        r.name.trim() !== '' ||
+        r.parentTag.trim() !== '' ||
+        (Number(r.qty) || 0) > 0 ||
+        (Number(r.retailPrice) || 0) > 0
+    );
+    if (!selectedPurchaseLineKey && activeRows.length === 0) return '';
+    return JSON.stringify({
+      k: selectedPurchaseLineKey,
+      rows: activeRows.map((r) => ({
+        s: r.sku.trim(),
+        t: r.parentTag.trim(),
+        n: r.name.trim(),
+        q: r.qty,
+        rp: r.retailPrice,
+        up: r.unitPurchasePrice,
+      })),
+    });
+  }, [breakdownRows, selectedPurchaseLineKey]);
+
+  const isIntakeDirty = useMemo(() => {
+    return currentIntakeSnapshot !== '' && currentIntakeSnapshot !== cleanIntakeSnapshot;
+  }, [currentIntakeSnapshot, cleanIntakeSnapshot]);
+
+  const handleSaveIntakeDraft = (): boolean => {
+    const populatedRows = breakdownRows.filter(
+      (r) =>
+        r.sku.trim() !== '' ||
+        r.name.trim() !== '' ||
+        r.parentTag.trim() !== '' ||
+        (Number(r.qty) || 0) > 0
+    );
+    if (!selectedPurchaseLineKey && populatedRows.length === 0) {
+      onShowToast('کاربرگ پذیرش خالی است؛ حداقل یک فاکتور یا ردیف کالا وارد کنید.');
+      return false;
+    }
+
+    const nowStr = `${formatPersianDate(new Date())} - ${new Date().toLocaleTimeString('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`;
+    const billLabel = activePurchaseInvoice
+      ? `${activePurchaseInvoice.billNo} (${activePurchaseInvoice.supplierName})`
+      : 'پذیرش مستقیم بدون فاکتور';
+    const title = `${billLabel} — ${populatedRows.length} ردیف`;
+
+    const draftRecord: SkuIntakeDraftRecord = {
+      id: activeIntakeDraftId || `intake-draft-${Date.now()}`,
+      title,
+      savedAt: nowStr,
+      selectedPurchaseLineKey,
+      purchaseBillNo: activePurchaseInvoice?.billNo,
+      supplierName: activePurchaseInvoice?.supplierName,
+      rows: breakdownRows,
+    };
+
+    setIntakeDrafts((prev) => {
+      const exists = prev.some((d) => d.id === draftRecord.id);
+      if (exists) return prev.map((d) => (d.id === draftRecord.id ? draftRecord : d));
+      return [draftRecord, ...prev];
+    });
+    setActiveIntakeDraftId(draftRecord.id);
+    setCleanIntakeSnapshot(currentIntakeSnapshot);
+    onShowToast(`پیش‌نویس پذیرش کالا «${title}» ذخیره شد.`);
+    return true;
+  };
+
+  const handleLoadIntakeDraft = (draft: SkuIntakeDraftRecord) => {
+    setSelectedPurchaseLineKey(draft.selectedPurchaseLineKey || '');
+    setBreakdownRows(
+      draft.rows && draft.rows.length > 0
+        ? draft.rows
+        : Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx))
+    );
+    setActiveIntakeDraftId(draft.id);
+    setIsIntakeDraftsModalOpen(false);
+    onShowToast(`پیش‌نویس پذیرش «${draft.title}» بارگذاری شد.`);
+  };
+
+  const handleDeleteIntakeDraft = (draftId: string) => {
+    setIntakeDrafts((prev) => prev.filter((d) => d.id !== draftId));
+    if (activeIntakeDraftId === draftId) {
+      setActiveIntakeDraftId(null);
+    }
+    onShowToast('پیش‌نویس پذیرش کالا حذف شد.');
+  };
+
+  const handleRequestTabChange = (nextTab: InventoryWmsTab) => {
+    if (nextTab === activeTab) return;
+    if (activeTab === 'purchase_invoice' && isPurchaseInvoiceDirty) {
+      setPendingExitTargetTab(nextTab);
+      return;
+    }
+    if (activeTab === 'sku_allocation' && isIntakeDirty) {
+      setPendingExitTargetTab(nextTab);
+      return;
+    }
+    setActiveTab(nextTab);
   };
 
   const handleLoadKnownVariants = () => {
@@ -714,7 +993,23 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
       const liquidVolNum = parseFloat(r.liquidVolumeMl.replace(/[^\d.]/g, '')) || 0;
       const podCapNum = parseFloat(r.podTankCapacityMl.replace(/[^\d.]/g, '')) || 0;
       const batteryCapacityMah = Number(r.batteryCapacityMah) || 0;
-      const effectiveCost = targetCost > 0 ? targetCost : r.unitPurchasePrice;
+      const matchedInvoiceLine = (activePurchaseInvoice?.lines || []).find((l) => {
+        const lName = (l.itemName || '').trim().toLocaleLowerCase();
+        const rTag = (r.parentTag || '').trim().toLocaleLowerCase();
+        const rName = (r.name || '').trim().toLocaleLowerCase();
+        return (
+          (rTag && (lName === rTag || lName.includes(rTag) || rTag.includes(lName))) ||
+          (rName && (lName === rName || lName.includes(rName) || rName.includes(lName)))
+        );
+      });
+      const invoiceLineCost =
+        matchedInvoiceLine?.valuationRate || matchedInvoiceLine?.unitPrice || 0;
+      const effectiveCost =
+        r.unitPurchasePrice > 0
+          ? r.unitPurchasePrice
+          : invoiceLineCost > 0
+          ? invoiceLineCost
+          : targetCost;
       const costPerMl =
         liquidVolNum > 0 ? calculateCostPerMl(effectiveCost, liquidVolNum) : undefined;
       const retailRate = r.retailPrice || 0;
@@ -810,7 +1105,15 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
         parsedItems,
         selectedLineId || null
       );
+      if (selectedPurchaseId && !selectedLineId) {
+        setRecentlyCreatedPurchases((prev) => prev.filter((p) => p.id !== selectedPurchaseId));
+      }
+      if (activeIntakeDraftId) {
+        setIntakeDrafts((prev) => prev.filter((d) => d.id !== activeIntakeDraftId));
+        setActiveIntakeDraftId(null);
+      }
       setBreakdownRows(Array.from({ length: 30 }, (_, idx) => createEmptyBreakdownRow(idx)));
+      setCleanIntakeSnapshot('');
       setIsSubmittingBreakdown(false);
       setSkuDiscrepancyModalData(null);
       setSelectedPurchaseLineKey('');
@@ -855,7 +1158,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
         <div className="inline-flex flex-wrap items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 gap-1">
           <button
             type="button"
-            onClick={() => setActiveTab('purchase_invoice')}
+            onClick={() => handleRequestTabChange('purchase_invoice')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'purchase_invoice'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -867,7 +1170,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('stocktaking')}
+            onClick={() => handleRequestTabChange('stocktaking')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'stocktaking'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -879,7 +1182,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('stock_ledger')}
+            onClick={() => handleRequestTabChange('stock_ledger')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'stock_ledger'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -891,7 +1194,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('theft_fraud')}
+            onClick={() => handleRequestTabChange('theft_fraud')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'theft_fraud'
                 ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -903,7 +1206,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('sku_allocation')}
+            onClick={() => handleRequestTabChange('sku_allocation')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'sku_allocation'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -911,11 +1214,11 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
             }`}
           >
             <Barcode className="w-3.5 h-3.5" />
-            <span>پذیرش و برچسب‌گذاری SKU ({pendingBreakdownPurchases.length})</span>
+            <span>پذیرش و برچسب‌گذاری SKU ({effectivePendingPurchases.length})</span>
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('categories_sectors')}
+            onClick={() => handleRequestTabChange('categories_sectors')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'categories_sectors'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -927,7 +1230,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('festivals_bundles')}
+            onClick={() => handleRequestTabChange('festivals_bundles')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'festivals_bundles'
                 ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-xs border border-slate-200 dark:border-slate-700'
@@ -970,21 +1273,25 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
       {activeTab === 'purchase_invoice' && (
         <PurchaseInvoiceManager
           productionMode={productionMode}
-          privacyMasked={privacyMasked}
+          privacyMasked={false}
           contacts={contacts}
           inventoryItems={items}
           warehouses={warehouses}
           masterOptions={masterOptions}
           categorySectors={categorySectors || {}}
-          purchaseInvoices={purchaseInvoices.length > 0 ? purchaseInvoices : pendingBreakdownPurchases}
+          purchaseInvoices={purchaseInvoices.length > 0 ? purchaseInvoices : effectivePendingPurchases}
           onSetCategorySector={onSetCategorySector || (() => {})}
           onAddMasterOption={onAddMasterOption}
           onQuickAddSupplier={onQuickAddSupplier}
           onCreatePurchaseInvoice={onCreatePurchaseInvoice}
           onShowToast={onShowToast}
+          onDirtyChange={setIsPurchaseInvoiceDirty}
+          saveDraftRef={savePurchaseDraftRef}
           onTransitionToIntake={(pinv) => {
+            setIsPurchaseInvoiceDirty(false);
+            setRecentlyCreatedPurchases((prev) => [pinv, ...prev.filter((p) => p.id !== pinv.id)]);
             setActiveTab('sku_allocation');
-            handleSelectPurchaseLine(pinv.id);
+            handleSelectPurchaseLine(pinv.id, pinv);
           }}
         />
       )}
@@ -2426,30 +2733,49 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
          ===================================================================== */}
       {activeTab === 'sku_allocation' && (
         <div className="space-y-4">
-          {/* Purchase Invoice / Line Selector Bar */}
+          {/* Purchase Invoice / Line Selector Bar & Drafts Controls */}
           <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                 <span>انتخاب فاکتور یا سطر خرید برای پذیرش کالا</span>
-                {pendingBreakdownPurchases.length > 0 && (
+                {effectivePendingPurchases.length > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
-                    {pendingBreakdownPurchases.length} فاکتور در انتظار پذیرش
+                    {effectivePendingPurchases.length} فاکتور در انتظار پذیرش
+                  </span>
+                )}
+                {activeIntakeDraftId && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-300">
+                    پیش‌نویس پذیرش فعال
                   </span>
                 )}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                فاکتور یا سطر مورد نظر را انتخاب کرده و سپس اقلام را در جدول اکسلی زیر وارد کنید.
+                فاکتور یا سطر مورد نظر را انتخاب کرده و یا از پیش‌نویس‌های ذخیره‌شده پذیرش کالا استفاده نمایید.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 text-xs shrink-0">
+            <div className="flex items-center gap-2 text-xs flex-wrap">
+              <PolarisButton
+                size="slim"
+                icon={<Save className="w-3.5 h-3.5 text-amber-600" />}
+                onClick={handleSaveIntakeDraft}
+              >
+                ذخیره پیش‌نویس پذیرش
+              </PolarisButton>
+              <PolarisButton
+                size="slim"
+                icon={<FolderOpen className="w-3.5 h-3.5 text-indigo-600" />}
+                onClick={() => setIsIntakeDraftsModalOpen(true)}
+              >
+                پیش‌نویس‌های پذیرش ({intakeDrafts.length})
+              </PolarisButton>
               <select
                 value={selectedPurchaseLineKey}
                 onChange={(e) => handleSelectPurchaseLine(e.target.value)}
                 className="px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 font-medium text-xs focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="">ثبت مستقیم کالا (بدون فاکتور خرید)</option>
-                {pendingBreakdownPurchases.map((p) => {
+                {effectivePendingPurchases.map((p) => {
                   const uncompletedLines = (p.lines || []).filter((l) => !l.skuBreakdownCompleted);
                   if (uncompletedLines.length === 0) {
                     return (
@@ -2465,7 +2791,7 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                       </option>
                       {uncompletedLines.map((line, idx) => (
                         <option key={`${p.id}:::${line.id}`} value={`${p.id}:::${line.id}`}>
-                          سطر {idx + 1}: {line.itemName} ({line.qty} عدد) — فی: {formatCurrency(line.unitPrice || line.valuationRate)} ت
+                          سطر {idx + 1}: {line.itemName} ({line.qty} عدد) — فی: {formatCurrency(line.valuationRate || line.unitPrice)} ت
                         </option>
                       ))}
                     </optgroup>
@@ -2534,13 +2860,16 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                               : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-1 mb-1.5">
+                      <div className="flex items-start justify-between gap-1 mb-1">
                         <span className="font-semibold text-slate-800 dark:text-slate-200 truncate" title={line.itemName}>
                           {line.itemName}
                         </span>
                         <span className="font-mono font-bold text-[11px] shrink-0">
                           هدف: {line.qty}
                         </span>
+                      </div>
+                      <div className="text-[11px] font-mono text-indigo-700 dark:text-indigo-300 mb-1.5">
+                        فی خرید: {formatCurrency(line.valuationRate || line.unitPrice)} تومان
                       </div>
 
                       <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
@@ -4133,6 +4462,147 @@ export const InventoryWmsModule: React.FC<InventoryWmsModuleProps> = ({
                   بستن گزارش
                 </PolarisButton>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTAKE DRAFTS MODAL */}
+      {isIntakeDraftsModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setIsIntakeDraftsModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md p-5 space-y-4 text-xs text-slate-900 dark:text-slate-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <FolderOpen className="w-4 h-4 text-indigo-600" />
+                <span>پیش‌نویس‌های پذیرش کالا ({intakeDrafts.length})</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsIntakeDraftsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {intakeDrafts.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 space-y-2">
+                <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
+                <p>هیچ پیش‌نویسی برای پذیرش کالا ذخیره نشده است.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {intakeDrafts.map((d) => (
+                  <div
+                    key={d.id}
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
+                      activeIntakeDraftId === d.id
+                        ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                        {d.title}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                        <Clock className="w-3 h-3" />
+                        <span>{d.savedAt}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <PolarisButton size="slim" primary onClick={() => handleLoadIntakeDraft(d)}>
+                        انتخاب و بارگذاری
+                      </PolarisButton>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteIntakeDraft(d.id)}
+                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                        title="حذف پیش‌نویس"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
+              <PolarisButton onClick={() => setIsIntakeDraftsModalOpen(false)}>بستن</PolarisButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXIT CONFIRMATION MODAL FOR PURCHASE INVOICE & GOODS INTAKE */}
+      {pendingExitTargetTab && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95 duration-150 text-xs">
+            <div className="flex items-center gap-3 text-amber-600 dark:text-amber-400">
+              <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-950/50">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  تأیید خروج از {activeTab === 'purchase_invoice' ? 'صفحه ثبت فاکتور خرید' : 'صفحه پذیرش کالا'}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  اطلاعات واردشده در این صفحه هنوز ثبت نهایی نشده است. آیا می‌خواهید قبل از خروج، آن را به عنوان پیش‌نویس ذخیره کنید؟
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <PolarisButton
+                size="slim"
+                onClick={() => setPendingExitTargetTab(null)}
+              >
+                انصراف و ادامه ویرایش
+              </PolarisButton>
+              <PolarisButton
+                size="slim"
+                destructive
+                onClick={() => {
+                  const target = pendingExitTargetTab;
+                  setPendingExitTargetTab(null);
+                  setIsPurchaseInvoiceDirty(false);
+                  setCleanIntakeSnapshot(currentIntakeSnapshot);
+                  setActiveTab(target);
+                }}
+              >
+                خروج بدون ذخیره
+              </PolarisButton>
+              <PolarisButton
+                size="slim"
+                primary
+                icon={<Save className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  const target = pendingExitTargetTab;
+                  if (activeTab === 'purchase_invoice') {
+                    savePurchaseDraftRef.current?.();
+                    setIsPurchaseInvoiceDirty(false);
+                  } else if (activeTab === 'sku_allocation') {
+                    handleSaveIntakeDraft();
+                  }
+                  setPendingExitTargetTab(null);
+                  setActiveTab(target);
+                }}
+              >
+                ذخیره پیش‌نویس و خروج
+              </PolarisButton>
             </div>
           </div>
         </div>

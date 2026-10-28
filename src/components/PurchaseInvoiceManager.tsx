@@ -1,16 +1,18 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Truck,
   Plus,
-  Calendar,
-  AlertCircle,
   FileSpreadsheet,
   CheckCircle2,
-  Lock,
+  Save,
+  FolderOpen,
+  Trash2,
+  Clock,
 } from 'lucide-react';
 import {
   PurchaseInvoiceRecord,
   CustomerContactRecord,
+  WarehouseKey,
   WarehouseRecord,
   InventoryItemRecord,
   MasterOptionsRegistry,
@@ -33,6 +35,36 @@ import {
   arePurchaseInvoiceLinesValid,
   getPopulatedPurchaseInvoiceLines,
 } from '../utils/purchaseInvoice';
+
+export interface PurchaseInvoiceDraftRecord {
+  id: string;
+  title: string;
+  savedAt: string;
+  supplier: string;
+  freightCost: number;
+  lines: PurchaseInvoiceLineGridItem[];
+  discountReceived: string;
+  deliveryStatus: 'در انتظار رسیدن بار' | 'رسیده' | '';
+  warehouseKey: string;
+  paymentAccountCode: string;
+  paidAmount: string;
+  settlementDueDate: string;
+  paymentNotes: string;
+}
+
+const PURCHASE_DRAFTS_STORAGE_KEY = 'emkan.purchase_invoice.drafts.v1';
+
+function loadPurchaseInvoiceDrafts(): PurchaseInvoiceDraftRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PURCHASE_DRAFTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 // Primary Polaris Styled Button
 function PolarisButton({
@@ -170,11 +202,11 @@ export interface PurchaseInvoiceManagerProps {
   onCreatePurchaseInvoice?: (pinv: PurchaseInvoiceRecord) => boolean;
   onShowToast: (msg: string) => void;
   onTransitionToIntake?: (pinv: PurchaseInvoiceRecord) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
+  saveDraftRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
-  productionMode = false,
-  privacyMasked = false,
   contacts,
   inventoryItems,
   warehouses,
@@ -187,6 +219,8 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
   onCreatePurchaseInvoice,
   onShowToast,
   onTransitionToIntake,
+  onDirtyChange,
+  saveDraftRef,
 }) => {
   // Form states
   const [pinvSupplier, setPinvSupplier] = useState('');
@@ -196,13 +230,19 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
   );
   const [pinvDiscountReceived, setPinvDiscountReceived] = useState('');
   const [pinvDeliveryStatus, setPinvDeliveryStatus] = useState<'در انتظار رسیدن بار' | 'رسیده' | ''>(
-    ''
+    'رسیده'
   );
-  const [pinvWarehouseKey, setPinvWarehouseKey] = useState<string>('central_external');
+  const [pinvWarehouseKey, setPinvWarehouseKey] = useState<string>('vitrine');
   const [pinvPaymentAccountCode, setPinvPaymentAccountCode] = useState<string>('110102');
   const [pinvPaidAmount, setPinvPaidAmount] = useState<string>('');
   const [pinvSettlementDueDate, setPinvSettlementDueDate] = useState<string>('');
   const [pinvPaymentNotes, setPinvPaymentNotes] = useState<string>('');
+
+  // Drafts Management State
+  const [drafts, setDrafts] = useState<PurchaseInvoiceDraftRecord[]>(loadPurchaseInvoiceDrafts);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [isDraftsModalOpen, setIsDraftsModalOpen] = useState(false);
+  const [justSavedCleanSnapshot, setJustSavedCleanSnapshot] = useState<string>('');
 
   // Modals & Inline Fast Supplier Completion
   const [showConfirmPurchaseModal, setShowConfirmPurchaseModal] = useState(false);
@@ -212,6 +252,153 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
   const [newSupplierPhone, setNewSupplierPhone] = useState('');
   const [isSavingSupplier, setIsSavingSupplier] = useState(false);
   const [isSubmittingPurchase, setIsSubmittingPurchase] = useState(false);
+
+  // Persist drafts to localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PURCHASE_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [drafts]);
+
+  // Compute current form fingerprint & dirty state
+  const currentSnapshotKey = useMemo(() => {
+    const populatedLines = pinvLines.filter(
+      (l) =>
+        l.itemName.trim() !== '' ||
+        l.parentTag.trim() !== '' ||
+        (Number(l.unitCost) || 0) > 0 ||
+        (Number(l.discountAmount) || 0) > 0
+    );
+    if (
+      !pinvSupplier.trim() &&
+      !pinvFreightCost &&
+      !pinvDiscountReceived &&
+      !pinvPaidAmount &&
+      !pinvSettlementDueDate &&
+      !pinvPaymentNotes.trim() &&
+      populatedLines.length === 0
+    ) {
+      return '';
+    }
+    return JSON.stringify({
+      s: pinvSupplier.trim(),
+      f: pinvFreightCost,
+      d: pinvDiscountReceived,
+      p: pinvPaidAmount,
+      due: pinvSettlementDueDate,
+      n: pinvPaymentNotes.trim(),
+      w: pinvWarehouseKey,
+      st: pinvDeliveryStatus,
+      lines: populatedLines.map((l) => ({
+        n: l.itemName.trim(),
+        t: l.parentTag.trim(),
+        c: l.itemCondition,
+        q: l.qty,
+        u: l.unitCost,
+        da: l.discountAmount,
+      })),
+    });
+  }, [
+    pinvSupplier,
+    pinvFreightCost,
+    pinvDiscountReceived,
+    pinvPaidAmount,
+    pinvSettlementDueDate,
+    pinvPaymentNotes,
+    pinvWarehouseKey,
+    pinvDeliveryStatus,
+    pinvLines,
+  ]);
+
+  const isDirty = useMemo(() => {
+    return currentSnapshotKey !== '' && currentSnapshotKey !== justSavedCleanSnapshot;
+  }, [currentSnapshotKey, justSavedCleanSnapshot]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  const handleSaveDraft = (): boolean => {
+    const populatedLines = getPopulatedPurchaseInvoiceLines(pinvLines);
+    if (!pinvSupplier.trim() && populatedLines.length === 0) {
+      onShowToast('برای ذخیره پیش‌نویس، حداقل نام تأمین‌کننده یا یک ردیف کالا را وارد کنید.');
+      return false;
+    }
+
+    const nowStr = `${formatPersianDate(new Date())} - ${new Date().toLocaleTimeString('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`;
+    const summaryLabel =
+      populatedLines.length > 0
+        ? populatedLines.map((l) => l.itemName || 'کالا').slice(0, 2).join('، ')
+        : 'بدون قلم کالا';
+    const draftTitle = `${pinvSupplier.trim() || 'تأمین‌کننده نامشخص'} (${summaryLabel})`;
+
+    const draftRecord: PurchaseInvoiceDraftRecord = {
+      id: activeDraftId || `pinv-draft-${Date.now()}`,
+      title: draftTitle,
+      savedAt: nowStr,
+      supplier: pinvSupplier,
+      freightCost: pinvFreightCost,
+      lines: pinvLines,
+      discountReceived: pinvDiscountReceived,
+      deliveryStatus: pinvDeliveryStatus,
+      warehouseKey: pinvWarehouseKey,
+      paymentAccountCode: pinvPaymentAccountCode,
+      paidAmount: pinvPaidAmount,
+      settlementDueDate: pinvSettlementDueDate,
+      paymentNotes: pinvPaymentNotes,
+    };
+
+    setDrafts((prev) => {
+      const exists = prev.some((d) => d.id === draftRecord.id);
+      if (exists) {
+        return prev.map((d) => (d.id === draftRecord.id ? draftRecord : d));
+      }
+      return [draftRecord, ...prev];
+    });
+    setActiveDraftId(draftRecord.id);
+    setJustSavedCleanSnapshot(currentSnapshotKey);
+    onShowToast(`پیش‌نویس فاکتور خرید «${draftTitle}» ذخیره شد.`);
+    return true;
+  };
+
+  useEffect(() => {
+    if (saveDraftRef) {
+      saveDraftRef.current = handleSaveDraft;
+    }
+  });
+
+  const handleLoadDraft = (draft: PurchaseInvoiceDraftRecord) => {
+    setPinvSupplier(draft.supplier || '');
+    setPinvFreightCost(draft.freightCost || 0);
+    setPinvLines(
+      draft.lines && draft.lines.length > 0
+        ? draft.lines
+        : Array.from({ length: 10 }, (_, idx) => createEmptyPurchaseRow(idx))
+    );
+    setPinvDiscountReceived(draft.discountReceived || '');
+    setPinvDeliveryStatus(draft.deliveryStatus || 'رسیده');
+    setPinvWarehouseKey(draft.warehouseKey || 'vitrine');
+    setPinvPaymentAccountCode(draft.paymentAccountCode || '110102');
+    setPinvPaidAmount(draft.paidAmount || '');
+    setPinvSettlementDueDate(draft.settlementDueDate || '');
+    setPinvPaymentNotes(draft.paymentNotes || '');
+    setActiveDraftId(draft.id);
+    setIsDraftsModalOpen(false);
+    onShowToast(`پیش‌نویس «${draft.title}» در فرم بارگذاری شد.`);
+  };
+
+  const handleDeleteDraft = (draftId: string) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== draftId));
+    if (activeDraftId === draftId) {
+      setActiveDraftId(null);
+    }
+    onShowToast('پیش‌نویس حذف شد.');
+  };
 
   // CRM SUPPLIERS ONLY: Exclude customers, include only suppliers and past vendors
   const supplierOptions = useMemo(() => {
@@ -263,8 +450,9 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
 
   const computedPurchaseUnpaidDebt = useMemo(() => {
     const paid = Math.max(0, Number(pinvPaidAmount) || 0);
-    return Math.max(0, computedPurchaseGrandTotal - paid);
-  }, [computedPurchaseGrandTotal, pinvPaidAmount]);
+    const freightOnCredit = paid === 0 ? Math.max(0, Number(pinvFreightCost) || 0) : 0;
+    return Math.max(0, computedPurchaseGrandTotal - paid + freightOnCredit);
+  }, [computedPurchaseGrandTotal, pinvPaidAmount, pinvFreightCost]);
 
   // Open Add Supplier Modal
   const handleOpenAddSupplier = (nameHint = '') => {
@@ -335,14 +523,15 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
       firstLine?.sector || detectCategorySector(firstLine?.parentTag || '', categorySectors);
 
     const selectedWarehouseObj = warehouses.find((w) => w.key === pinvWarehouseKey);
+    const resolvedWarehouseKey = (pinvWarehouseKey || 'vitrine') as WarehouseKey;
     const newPinv: PurchaseInvoiceRecord = {
       id: `pinv-${Date.now()}`,
       billNo: `PINV-${140400 + purchaseInvoices.length + 1}`,
       supplierName: pinvSupplier.trim(),
       date: formatPersianDate(new Date()),
-      warehouse: selectedWarehouseObj?.name || 'انبار خارجی / مرکزی',
-      warehouseKey: pinvWarehouseKey,
-      inventoryAccountCode: selectedWarehouseObj?.accountCode,
+      warehouse: selectedWarehouseObj?.name || 'انبار ویترین',
+      warehouseKey: resolvedWarehouseKey,
+      inventoryAccountCode: selectedWarehouseObj?.accountCode || '110401',
       totalAmount: totalNum,
       paidAmount: paidNum,
       landedCostAdded: 0,
@@ -352,18 +541,22 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
       settlementDueDate: pinvSettlementDueDate || undefined,
       freightAmount: pinvFreightCost > 0 ? pinvFreightCost : undefined,
       discountReceived: discNum > 0 ? discNum : undefined,
-      deliveryStatus: pinvDeliveryStatus as 'در انتظار رسیدن بار' | 'رسیده',
+      deliveryStatus: (pinvDeliveryStatus || 'رسیده') as 'در انتظار رسیدن بار' | 'رسیده',
       costCenter: detectedFirstSector === 'pc' ? 'CC-102' : 'CC-101',
       docstatus: 1,
       skuBreakdownCompleted: false,
       paymentAccountCode: paidNum > 0 ? pinvPaymentAccountCode : undefined,
+      parentTag: firstLine?.itemName.trim(),
+      itemType: firstLine?.parentTag.trim(),
       lines: activeLines.map((l, idx) => {
         const allocation = discountAllocations[idx];
         const lineDiscountAmount = allocation?.lineDiscountAmount || 0;
+        const cleanItemName = l.itemName.trim();
+        const cleanCategory = l.parentTag.trim();
         return {
           id: `piline-${Date.now()}-${idx}`,
           sku: `PINV-LINE-${idx + 1}`,
-          itemName: l.itemName.trim(),
+          itemName: cleanItemName,
           uom: 'عدد',
           qty: l.qty,
           unitPrice: l.unitCost,
@@ -374,8 +567,11 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
           allocatedHeaderDiscount: allocation?.allocatedHeaderDiscount || 0,
           netLineAmount: allocation?.netLineAmount ?? l.qty * l.unitCost,
           itemCondition: l.itemCondition,
-          parentTag: l.parentTag || l.itemName.trim(),
+          // CRITICAL: parentTag in Goods Intake must be the product name from the invoice (cleanItemName), while cleanCategory is stored in itemType
+          parentTag: cleanItemName,
+          itemType: cleanCategory || undefined,
           sector: l.sector || detectedFirstSector,
+          warehouseKey: resolvedWarehouseKey,
         };
       }),
     };
@@ -385,25 +581,31 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
     setShowConfirmPurchaseModal(false);
 
     if (success) {
-      // Reset form
+      if (activeDraftId) {
+        setDrafts((prev) => prev.filter((d) => d.id !== activeDraftId));
+        setActiveDraftId(null);
+      }
+      // Reset form and clear dirty state before transitioning
       setPinvSupplier('');
       setPinvPaidAmount('');
       setPinvDiscountReceived('');
       setPinvFreightCost(0);
       setPinvPaymentNotes('');
       setPinvSettlementDueDate('');
+      setPinvDeliveryStatus('رسیده');
+      setPinvWarehouseKey('vitrine');
       setPinvLines(Array.from({ length: 10 }, (_, idx) => createEmptyPurchaseRow(idx)));
+      setJustSavedCleanSnapshot('');
+      onDirtyChange?.(false);
 
-      // Transition to SKU Intake Queue
-      if (onTransitionToIntake) {
-        onTransitionToIntake(newPinv);
-      }
+      // Transition immediately to SKU Intake Queue with the newly created invoice
+      onTransitionToIntake?.(newPinv);
     }
   };
 
   return (
     <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
-      {/* Header */}
+      {/* Header with Drafts Controls */}
       <div className="border-b border-slate-200 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
@@ -413,13 +615,36 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               ثبت فاکتور خرید بار
               <span className="text-[11px] font-normal text-slate-400">
-                (مرحله اول: ثبت مالی کلان و برچسب «در انتظار رسیدن بار»)
+                (مرحله اول: ثبت مالی کلان و انتقال خودکار به پذیرش کالا)
               </span>
+              {activeDraftId && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300">
+                  پیش‌نویس فعال
+                </span>
+              )}
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              فاکتور خرید ثبت‌شده مستقیماً به صف «پذیرش و کدگذاری کالا» در همین ماژول انبار منتقل می‌شود.
+              پس از ثبت، فاکتور خرید مستقیماً به صفحه «پذیرش و کدگذاری کالا» منتقل شده و نام و قیمت خرید هر محصول در شیت درج می‌شود.
             </p>
           </div>
+        </div>
+
+        {/* Draft Actions Bar in Header */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <PolarisButton
+            size="slim"
+            icon={<Save className="w-3.5 h-3.5 text-amber-600" />}
+            onClick={handleSaveDraft}
+          >
+            ذخیره پیش‌نویس
+          </PolarisButton>
+          <PolarisButton
+            size="slim"
+            icon={<FolderOpen className="w-3.5 h-3.5 text-indigo-600" />}
+            onClick={() => setIsDraftsModalOpen(true)}
+          >
+            پیش‌نویس‌های فاکتور ({drafts.length})
+          </PolarisButton>
         </div>
       </div>
 
@@ -489,7 +714,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
                 if (status === 'در انتظار رسیدن بار') {
                   setPinvWarehouseKey('in_transit');
                 } else if (pinvWarehouseKey === 'in_transit') {
-                  setPinvWarehouseKey('central_external');
+                  setPinvWarehouseKey('vitrine');
                 }
               }}
               className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-white dark:bg-slate-900 font-semibold"
@@ -511,6 +736,8 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
                 setPinvWarehouseKey(nextKey);
                 if (nextKey === 'in_transit') {
                   setPinvDeliveryStatus('در انتظار رسیدن بار');
+                } else if (pinvDeliveryStatus === 'در انتظار رسیدن بار' || !pinvDeliveryStatus) {
+                  setPinvDeliveryStatus('رسیده');
                 }
               }}
               className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-white dark:bg-slate-900"
@@ -544,7 +771,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               جمع ناخالص اقلام فاکتور
             </label>
             <div className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 font-bold tabular-nums">
-              {privacyMasked ? '••••••' : `${formatCurrency(computedPurchaseSubtotal)} تومان`}
+              {`${formatCurrency(computedPurchaseSubtotal)} تومان`}
             </div>
           </div>
 
@@ -556,7 +783,6 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               type="text"
               value={pinvDiscountReceived ? formatLiveComma(pinvDiscountReceived) : ''}
               onChange={(e) => setPinvDiscountReceived(String(parseCommaNumber(e.target.value) || ''))}
-              onFocus={(e) => e.target.select()}
               placeholder="۰"
               className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-white dark:bg-slate-900 tabular-nums font-mono text-left"
             />
@@ -570,7 +796,6 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               type="text"
               value={pinvFreightCost ? formatLiveComma(pinvFreightCost) : ''}
               onChange={(e) => setPinvFreightCost(parseCommaNumber(e.target.value))}
-              onFocus={(e) => e.target.select()}
               placeholder="۰"
               className="w-full rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 bg-white dark:bg-slate-900 tabular-nums font-mono text-left"
             />
@@ -584,7 +809,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               مبلغ خالص فاکتور خرید
             </label>
             <div className="w-full rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-3 py-1.5 font-bold text-indigo-700 dark:text-indigo-300 tabular-nums">
-              {privacyMasked ? '••••••' : `${formatCurrency(computedPurchaseGrandTotal)} تومان`}
+              {`${formatCurrency(computedPurchaseGrandTotal)} تومان`}
             </div>
           </div>
         </div>
@@ -626,7 +851,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               مانده بدهی تجاری (۲۱۰۱)
             </label>
             <div className="w-full rounded-lg border border-rose-200 bg-rose-50 dark:bg-rose-950/30 px-2.5 py-1.5 font-bold text-rose-800 dark:text-rose-300 tabular-nums">
-              {privacyMasked ? '••••••' : `${formatCurrency(computedPurchaseUnpaidDebt)} تومان`}
+              {`${formatCurrency(computedPurchaseUnpaidDebt)} تومان`}
             </div>
           </div>
 
@@ -656,7 +881,15 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <PolarisButton
+            type="button"
+            icon={<Save className="w-4 h-4 text-amber-600" />}
+            onClick={handleSaveDraft}
+          >
+            ذخیره به عنوان پیش‌نویس
+          </PolarisButton>
+
           <PolarisButton
             type="button"
             primary
@@ -670,7 +903,70 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
         </div>
       </form>
 
-      {/* CONFIRMATION MODAL WITH HIDDEN AMOUNTS */}
+      {/* DRAFTS SELECTION MODAL */}
+      <PolarisModalSheet
+        open={isDraftsModalOpen}
+        onClose={() => setIsDraftsModalOpen(false)}
+        title={`پیش‌نویس‌های ثبت فاکتور خرید (${drafts.length})`}
+        footer={
+          <PolarisButton onClick={() => setIsDraftsModalOpen(false)}>بستن</PolarisButton>
+        }
+      >
+        {drafts.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 space-y-2">
+            <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
+            <p>هیچ پیش‌نویسی برای فاکتور خرید ذخیره نشده است.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {drafts.map((d) => {
+              const lineCount = getPopulatedPurchaseInvoiceLines(d.lines || []).length;
+              return (
+                <div
+                  key={d.id}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-2 transition-colors ${
+                    activeDraftId === d.id
+                      ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {d.title}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {d.savedAt}
+                      </span>
+                      <span>{lineCount} ردیف کالا</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <PolarisButton
+                      size="slim"
+                      primary
+                      onClick={() => handleLoadDraft(d)}
+                    >
+                      انتخاب و بارگذاری
+                    </PolarisButton>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDraft(d.id)}
+                      className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      title="حذف پیش‌نویس"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PolarisModalSheet>
+
+      {/* CONFIRMATION MODAL */}
       {showConfirmPurchaseModal && (
         <div
           role="dialog"
@@ -690,7 +986,7 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               </div>
             </div>
 
-            {/* General Info Summary - Hidden Amounts for Privacy */}
+            {/* General Info Summary - Full Visible Financial Totals */}
             <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3.5 space-y-2 text-xs border border-slate-200 dark:border-slate-700/60">
               <div className="flex justify-between items-center py-1 border-b border-slate-200 dark:border-slate-700">
                 <span className="text-slate-500 dark:text-slate-400">تأمین‌کننده / فروشنده:</span>
@@ -699,17 +995,29 @@ export const PurchaseInvoiceManager: React.FC<PurchaseInvoiceManagerProps> = ({
               <div className="flex justify-between items-center py-1 border-b border-slate-200 dark:border-slate-700">
                 <span className="text-slate-500 dark:text-slate-400">انبار مقصد:</span>
                 <span className="font-semibold">
-                  {warehouses.find((w) => w.key === pinvWarehouseKey)?.name || 'انبار خارجی / مرکزی'}
+                  {warehouses.find((w) => w.key === pinvWarehouseKey)?.name || 'انبار ویترین'}
                 </span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-200 dark:border-slate-700">
                 <span className="text-slate-500 dark:text-slate-400">وضعیت تحویل:</span>
                 <span className="font-semibold">{pinvDeliveryStatus}</span>
               </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200 dark:border-slate-700">
+                <span className="text-slate-500 dark:text-slate-400">تعداد اقلام معتبر:</span>
+                <span className="font-semibold font-mono">
+                  {getPopulatedPurchaseInvoiceLines(pinvLines).length} ردیف ({getPopulatedPurchaseInvoiceLines(pinvLines).reduce((s, l) => s + (Number(l.qty) || 0), 0)} عدد)
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200 dark:border-slate-700">
+                <span className="text-slate-500 dark:text-slate-400">مبلغ خالص فاکتور خرید:</span>
+                <span className="font-bold font-mono text-indigo-700 dark:text-indigo-300">
+                  {formatCurrency(computedPurchaseGrandTotal)} تومان
+                </span>
+              </div>
               <div className="flex justify-between items-center py-1">
-                <span className="text-slate-500 dark:text-slate-400">تعداد ردیف‌های کالا:</span>
-                <span className="font-semibold">
-                  {pinvLines.length} ردیف ({pinvLines.reduce((s, l) => s + (Number(l.qty) || 0), 0)} عدد)
+                <span className="text-slate-500 dark:text-slate-400">مانده بدهی تجاری (۲۱۰۱):</span>
+                <span className="font-bold font-mono text-rose-700 dark:text-rose-400">
+                  {formatCurrency(computedPurchaseUnpaidDebt)} تومان
                 </span>
               </div>
             </div>

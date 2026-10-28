@@ -65,6 +65,8 @@ export interface InvoiceLineItem {
   netLineAmount: number;
   valuationRate: number;
   parentTag?: string;
+  itemType?: string;
+  itemCondition?: string;
   isDecantMl?: boolean;
   sector?: 'vape' | 'pc';
   warehouseKey?: WarehouseKey;

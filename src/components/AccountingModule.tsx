@@ -489,6 +489,10 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
       0
     );
 
+    const availableLiquidCash = liveAccounts
+      .filter((a) => ['110101', '110102', '110103'].includes(a.code))
+      .reduce((sum, a) => exactAdd(sum, Math.max(0, a.balance || 0)), 0);
+
     const result = calculateThreeBucketShareholderState({
       initialInventoryCapital: initialInventoryCapitalBaseline,
       totalRevenue: totalSalesRevenue,
@@ -496,6 +500,7 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
       totalOperatingExpenses: totalDailyExpenses + totalMonthlyFixed,
       totalNewPurchasesAmount: totalPurchases,
       unrealizedCreditSales,
+      availableLiquidCash,
       partners: [
         {
           id: p1?.id || 'sh-1',
@@ -539,6 +544,7 @@ export const AccountingModule: React.FC<AccountingModuleProps> = ({
     shareholders,
     shareholderDrawings,
     initialInventoryCapitalBaseline,
+    liveAccounts,
   ]);
 
   const hasChildren = (code: string) => liveAccounts.some((a) => a.parentCode === code);

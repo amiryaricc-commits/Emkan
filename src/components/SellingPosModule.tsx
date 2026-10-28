@@ -699,8 +699,20 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
     [cart, serviceLines, pricingMode, promotionRules, paidAmountInput]
   );
 
+  // Live-synced customer record from contacts prop (BUG-APP-04 / BUG-POS-02)
+  const liveSelectedCustomer = useMemo(() => {
+    if (!selectedCustomer) return null;
+    return (
+      contacts.find(
+        (c) =>
+          c.id === selectedCustomer.id ||
+          c.fullName.trim() === selectedCustomer.fullName.trim()
+      ) || selectedCustomer
+    );
+  }, [contacts, selectedCustomer]);
+
   // Customer Store Credit available and applied
-  const customerCreditAvailable = selectedCustomer?.creditBalance ?? 0;
+  const customerCreditAvailable = liveSelectedCustomer?.creditBalance ?? 0;
   const usedCreditBalance = (applyCustomerCredit && customerCreditAvailable > 0)
     ? Math.min(grandTotal, customerCreditAvailable)
     : 0;
@@ -1387,7 +1399,7 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
                 />
 
                 {/* Customer Store Credit Banner */}
-                {selectedCustomer && (selectedCustomer.creditBalance ?? 0) > 0 && (
+                {liveSelectedCustomer && (liveSelectedCustomer.creditBalance ?? 0) > 0 && (
                   <div className="mt-1.5 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-200 flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <input
@@ -1402,17 +1414,17 @@ export const SellingPosModule: React.FC<SellingPosModuleProps> = ({
                       </label>
                     </div>
                     <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                      {formatCurrency(selectedCustomer.creditBalance ?? 0)} تومان
+                      {formatCurrency(liveSelectedCustomer.creditBalance ?? 0)} تومان
                     </span>
                   </div>
                 )}
 
                 {/* Customer Debt Alert */}
-                {selectedCustomer && (selectedCustomer.debitBalance ?? 0) > 0 && (
+                {liveSelectedCustomer && (liveSelectedCustomer.debitBalance ?? 0) > 0 && (
                   <div className="mt-1.5 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200 flex items-center justify-between">
                     <span className="font-bold">⚠️ مانده بدهی معوق قبلی این مشتری:</span>
                     <span className="font-mono font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                      {formatCurrency(selectedCustomer.debitBalance ?? 0)} تومان
+                      {formatCurrency(liveSelectedCustomer.debitBalance ?? 0)} تومان
                     </span>
                   </div>
                 )}

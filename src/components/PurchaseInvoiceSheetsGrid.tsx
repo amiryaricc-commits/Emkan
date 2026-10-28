@@ -84,6 +84,11 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeCell, setActiveCell] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
   const [isEditing, setIsEditing] = useState(false);
+  const activeCellRef = useRef<{ row: number; col: number }>({ row: 0, col: 0 });
+  const linesRef = useRef<PurchaseInvoiceLineGridItem[]>(lines);
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
 
   // Dynamic columns definition
   const columns = useMemo<PurchaseGridColumnDef[]>(() => {
@@ -96,7 +101,10 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
         align: 'right',
         type: 'select',
         options: Array.from(
-          new Set(catalogItems.flatMap((item) => [item.name, item.parentTag || '']))
+          new Set([
+            ...(masterOptions?.tags || []),
+            ...catalogItems.flatMap((item) => [item.name, item.parentTag || '']),
+          ])
         ),
       },
       {
@@ -277,15 +285,17 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
     const key = `${row}_${col}`;
     const td = cellTdRefs.current.get(key);
     if (td && tableContainerRef.current) {
-      td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      td.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
     }
   }, []);
 
   // Cell Selection Handler
   const selectCell = useCallback(
-    (row: number, col: number, startEdit = false) => {
-      const validR = Math.max(0, Math.min(row, lines.length - 1));
+    (row: number, col: number, startEdit = false, totalRowsOverride?: number) => {
+      const rowCount = totalRowsOverride ?? linesRef.current.length;
+      const validR = Math.max(0, Math.min(row, Math.max(0, rowCount - 1)));
       const validC = Math.max(0, Math.min(col, columns.length - 1));
+      activeCellRef.current = { row: validR, col: validC };
       setActiveCell({ row: validR, col: validC });
       setSelectionRange({
         startRow: validR,
@@ -300,17 +310,19 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
         setTimeout(() => {
           const inputEl = inputRefs.current.get(`${validR}_${validC}`);
           if (inputEl && document.activeElement !== inputEl) {
-            inputEl.focus();
+            inputEl.focus({ preventScroll: true });
           }
         }, 0);
       } else {
         setTimeout(() => {
           const td = cellTdRefs.current.get(`${validR}_${validC}`);
-          if (td) td.focus();
-        }, 20);
+          if (td && document.activeElement !== td) {
+            td.focus({ preventScroll: true });
+          }
+        }, 10);
       }
     },
-    [lines.length, columns.length, scrollActiveCellIntoView]
+    [columns.length, scrollActiveCellIntoView]
   );
 
   const expandSelection = useCallback(
@@ -664,47 +676,33 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
     [lines, activeCell, pushHistoryState, onChangeLines, selectCell, onShowToast]
   );
 
-  // Add new row helper
+  // Add new row helper — always appends/inserts a fresh row
   const handleAddNewRow = (afterIndex?: number) => {
-    const lastRow = lines[lines.length - 1];
-    if (
-      lastRow &&
-      !lastRow.itemName.trim() &&
-      !lastRow.parentTag.trim() &&
-      lastRow.qty <= 0 &&
-      lastRow.unitCost <= 0 &&
-      (lastRow.discountAmount || 0) <= 0 &&
-      !lastRow.notes?.trim()
-    ) {
-      selectCell(lines.length - 1, activeCell.col, true);
-      return lines.length - 1;
-    }
-
-    const prevRow = lines[afterIndex ?? lines.length - 1];
+    const currentLines = linesRef.current;
+    const prevRow = currentLines[afterIndex ?? currentLines.length - 1];
     const defaultCondition = prevRow?.itemCondition || 'آکبند';
     const defaultSector = prevRow?.sector || 'vape';
 
     const newRow: PurchaseInvoiceLineGridItem = {
-      ...createEmptyPurchaseLine(lines.length),
+      ...createEmptyPurchaseLine(currentLines.length),
       itemCondition: defaultCondition,
       sector: defaultSector,
     };
 
     let updated: PurchaseInvoiceLineGridItem[];
-    if (afterIndex !== undefined && afterIndex < lines.length - 1) {
-      updated = [...lines];
+    if (afterIndex !== undefined && afterIndex < currentLines.length - 1) {
+      updated = [...currentLines];
       updated.splice(afterIndex + 1, 0, newRow);
     } else {
-      updated = [...lines, newRow];
+      updated = [...currentLines, newRow];
     }
+    linesRef.current = updated;
     pushHistoryState(updated);
     onChangeLines(updated);
-    const targetIdx = afterIndex !== undefined ? afterIndex + 1 : lines.length;
-    if (lines.length === 0) {
-      window.setTimeout(() => selectCell(0, activeCell.col, true), 40);
-    } else {
-      selectCell(targetIdx, activeCell.col, false);
-    }
+    const targetIdx = afterIndex !== undefined ? afterIndex + 1 : currentLines.length;
+    window.setTimeout(() => {
+      selectCell(targetIdx, activeCellRef.current.col, true, updated.length);
+    }, 20);
     return targetIdx;
   };
 
@@ -757,7 +755,8 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
     field: K,
     val: PurchaseInvoiceLineGridItem[K]
   ) => {
-    const updated = lines.map((r, idx) => {
+    const currentLines = linesRef.current;
+    const updated = currentLines.map((r, idx) => {
       if (idx !== rowIdx) return r;
       const next = { ...r, [field]: val };
 
@@ -770,9 +769,6 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
         next.sector = detected;
         if (field === 'parentTag') {
           next.itemType = String(val || '');
-          if (val && onAddMasterOption) {
-            onAddMasterOption('tags', String(val));
-          }
           if (val && onSetCategorySector) {
             onSetCategorySector(String(val), detected);
           }
@@ -780,21 +776,46 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
       }
 
       if (field === 'itemName' && val) {
+        const cleanVal = String(val).trim();
+        const normVal = cleanVal.toLowerCase();
         const match = catalogItems.find(
-          (it) => it.name.trim().toLowerCase() === String(val).trim().toLowerCase()
+          (it) =>
+            it.name.trim().toLowerCase() === normVal ||
+            (it.parentTag || '').trim().toLowerCase() === normVal
         );
         if (match) {
           next.parentTag = match.parentTag || match.category;
           next.sector = match.sector || detectCategorySector(next.parentTag, categorySectors);
           if (match.condition) next.itemCondition = match.condition;
-          if (match.valuationRate) next.unitCost = match.valuationRate;
-          next.notes = match.sku;
+          if (match.valuationRate && next.unitCost <= 0) next.unitCost = match.valuationRate;
+          if (!next.notes) next.notes = match.sku;
+        } else if (cleanVal) {
+          if (!r.parentTag.trim() || r.parentTag.trim() === r.itemName.trim()) {
+            if (cleanVal.includes('سالت')) next.parentTag = 'سالت نیکوتین';
+            else if (cleanVal.includes('جویس')) next.parentTag = 'جویس فری‌بیس';
+            else if (cleanVal.includes('پاد یکبار')) next.parentTag = 'پاد یکبارمصرف';
+            else if (cleanVal.includes('پاد') || cleanVal.includes('ماد')) next.parentTag = 'دستگاه پاد و ماد';
+            else if (cleanVal.includes('کویل') || cleanVal.includes('کارتریج')) next.parentTag = 'کارتریج و کویل';
+            else if (
+              cleanVal.includes('گرافیک') ||
+              cleanVal.includes('پردازنده') ||
+              cleanVal.includes('مادربرد') ||
+              cleanVal.includes('رم') ||
+              cleanVal.includes('کامپیوتر')
+            ) {
+              next.parentTag = 'قطعات کامپیوتر و سخت‌افزار';
+            } else {
+              next.parentTag = cleanVal;
+            }
+          }
+          next.sector = detectCategorySector(next.parentTag || cleanVal, categorySectors);
         }
       }
 
       return next;
     });
 
+    linesRef.current = updated;
     pushHistoryState(updated);
     onChangeLines(updated);
   };
@@ -952,11 +973,29 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
         e.preventDefault();
         selectCell(rowIdx, colIdx, true);
         if (colDef.type !== 'select') {
+          const normalizedKey = e.key
+            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+          const initialVal =
+            colDef.type === 'number' || colDef.type === 'currency'
+              ? Number(normalizedKey.replace(/[^\d]/g, '')) || 0
+              : e.key;
           updateRowField(
             rowIdx,
             colDef.id as keyof PurchaseInvoiceLineGridItem,
-            e.key as never
+            initialVal as never
           );
+          const inp = inputRefs.current.get(`${rowIdx}_${colIdx}`);
+          if (inp instanceof HTMLInputElement) {
+            requestAnimationFrame(() => {
+              const len = inp.value.length;
+              try {
+                inp.setSelectionRange(len, len);
+              } catch {
+                // ignore if input type does not support setSelectionRange
+              }
+            });
+          }
         }
       }
     }
@@ -1486,6 +1525,7 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -1505,7 +1545,14 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                                 )
                               }
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                               placeholder="۰"
                               className="w-full h-8 px-2 font-mono font-bold text-left bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none tabular-nums text-xs select-text cursor-text"
                             />
@@ -1518,6 +1565,7 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -1538,7 +1586,14 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                                 );
                               }}
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                               placeholder="۰"
                               className="w-full h-8 px-2 font-mono font-bold text-center bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none tabular-nums text-xs select-text cursor-text"
                             />
@@ -1550,6 +1605,7 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                               onMouseDown={(e) => {
                                 e.stopPropagation();
                                 if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
                                   setActiveCell({ row: rowIdx, col: colIdx });
                                   setSelectionRange({
                                     startRow: rowIdx,
@@ -1569,7 +1625,14 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                                 )
                               }
                               onKeyDown={(e) => handleInputKeyDown(e, rowIdx, colIdx)}
-                              onBlur={() => setIsEditing(false)}
+                              onBlur={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                               placeholder="توضیحات / بارکد کارتن..."
                               className={`w-full h-8 px-2 bg-transparent text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none text-xs select-text cursor-text ${
                                 colDef.align === 'left'
@@ -1579,55 +1642,91 @@ export const PurchaseInvoiceSheetsGrid: React.FC<PurchaseInvoiceSheetsGridProps>
                                   : 'text-right'
                               }`}
                             />
-                          ) : isCellEditing && colDef.type === 'select' ? (
+                          ) : colDef.type === 'select' ? (
                             <GridSearchableSelect
+                              ref={(el) => setInputRef(cellKey, el)}
                               value={String(cellRawValue || '')}
                               options={colDef.options || []}
-                              placeholder="جستجو و انتخاب..."
-                              onChange={(val) => {
+                              isOpen={isCellEditing}
+                              align={colDef.align}
+                              allowCreate={colDef.id !== 'itemCondition'}
+                              placeholder={
+                                colDef.id === 'itemName'
+                                  ? 'جستجو یا تایپ کالای/تگ جدید...'
+                                  : colDef.id === 'parentTag'
+                                  ? 'انتخاب یا تایپ دسته‌بندی...'
+                                  : 'انتخاب...'
+                              }
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                if (!e.shiftKey) {
+                                  activeCellRef.current = { row: rowIdx, col: colIdx };
+                                  setActiveCell({ row: rowIdx, col: colIdx });
+                                  setSelectionRange({
+                                    startRow: rowIdx,
+                                    startCol: colIdx,
+                                    endRow: rowIdx,
+                                    endCol: colIdx,
+                                  });
+                                  setIsEditing(true);
+                                }
+                              }}
+                              onOpen={() => {
+                                activeCellRef.current = { row: rowIdx, col: colIdx };
+                                setActiveCell({ row: rowIdx, col: colIdx });
+                                setSelectionRange({
+                                  startRow: rowIdx,
+                                  startCol: colIdx,
+                                  endRow: rowIdx,
+                                  endCol: colIdx,
+                                });
+                                setIsEditing(true);
+                              }}
+                              onChange={(val, meta) => {
                                 updateRowField(
                                   rowIdx,
                                   colDef.id as keyof PurchaseInvoiceLineGridItem,
                                   val as never
                                 );
-                                selectCell(rowIdx, colIdx, false);
+                                if (!meta?.keepEditing) {
+                                  setIsEditing(false);
+                                }
+                              }}
+                              onCreateOption={(newVal) => {
+                                if (
+                                  (colDef.id === 'itemName' || colDef.id === 'parentTag') &&
+                                  newVal.trim() &&
+                                  onAddMasterOption
+                                ) {
+                                  onAddMasterOption('tags', newVal.trim());
+                                }
                               }}
                               onCommitAndMoveDown={() => {
-                                if (rowIdx + 1 < lines.length) {
+                                if (rowIdx + 1 < linesRef.current.length) {
                                   selectCell(rowIdx + 1, colIdx, false);
                                 } else {
-                                  const nextIdx = handleAddNewRow(rowIdx);
-                                  setTimeout(() => selectCell(nextIdx, colIdx, true), 40);
+                                  handleAddNewRow(rowIdx);
                                 }
                               }}
-                              onClose={() => setIsEditing(false)}
+                              onCommitAndMoveTab={(shiftKey) => {
+                                if (shiftKey) {
+                                  if (colIdx > 0) selectCell(rowIdx, colIdx - 1, false);
+                                  else if (rowIdx > 0) selectCell(rowIdx - 1, columns.length - 1, false);
+                                } else {
+                                  if (colIdx + 1 < columns.length) selectCell(rowIdx, colIdx + 1, false);
+                                  else if (rowIdx + 1 < linesRef.current.length) selectCell(rowIdx + 1, 0, false);
+                                }
+                              }}
+                              onClose={() => {
+                                if (
+                                  activeCellRef.current.row === rowIdx &&
+                                  activeCellRef.current.col === colIdx
+                                ) {
+                                  setIsEditing(false);
+                                }
+                              }}
                             />
-                          ) : (
-                            // READ MODE DISPLAY FOR SELECT CELLS
-                            <div
-                              onClick={(e) => {
-                                if (isCellActive) {
-                                  e.stopPropagation();
-                                  selectCell(rowIdx, colIdx, true);
-                                }
-                              }}
-                              className={`w-full h-8 px-2 flex items-center truncate cursor-cell select-text ${
-                                colDef.align === 'left'
-                                  ? 'justify-start font-mono font-bold'
-                                  : colDef.align === 'center'
-                                  ? 'justify-center font-mono'
-                                  : 'justify-start font-medium'
-                              }`}
-                            >
-                              <span className="truncate">
-                                {cellRawValue !== undefined && cellRawValue !== null && cellRawValue !== '' ? (
-                                  String(cellRawValue)
-                                ) : (
-                                  <span className="text-slate-300 dark:text-slate-700 text-[11px]">—</span>
-                                )}
-                              </span>
-                            </div>
-                          )}
+                          ) : null}
 
                           {/* Excel Drag Corner Handle */}
                           {isFillCorner && (

@@ -39,6 +39,14 @@ interface CrmMarketingModuleProps {
   privacyMasked?: boolean;
   productionMode: boolean;
   onAddContact: (contact: CustomerContactRecord) => void;
+  onUpdateContact?: (contact: CustomerContactRecord) => void;
+  onSettleContactBalance?: (payload: {
+    contactId: string;
+    amount: number;
+    settlementType: 'receive_debt' | 'pay_credit';
+    accountCode: string;
+    note?: string;
+  }) => void;
   onAddLead: (lead: CrmLeadRecord) => void;
   onAdvanceLeadStage: (id: string) => void;
   onImportBulkSmsNumbers: (items: BulkSmsContactRecord[]) => void;
@@ -62,6 +70,8 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
   bulkSmsPool,
   privacyMasked = false,
   onAddContact,
+  onUpdateContact,
+  onSettleContactBalance,
   onAddLead,
   onAdvanceLeadStage,
   onImportBulkSmsNumbers,
@@ -70,6 +80,15 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
   const [activeTab, setActiveTab] = useState<CrmSixTab>('all_contacts');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedContactIds, setExpandedContactIds] = useState<Record<string, boolean>>({});
+  const [editingContact, setEditingContact] = useState<CustomerContactRecord | null>(null);
+  const [settlingContact, setSettlingContact] = useState<{
+    contact: CustomerContactRecord;
+    settlementType: 'receive_debt' | 'pay_credit';
+    maxAmount: number;
+  } | null>(null);
+  const [settleAmount, setSettleAmount] = useState('');
+  const [settleAccountCode, setSettleAccountCode] = useState('110102');
+  const [settleNote, setSettleNote] = useState('');
 
   // Polaris Sheet 1: New Contact / Reseller / Supplier (Closed by default, opens via +)
   const [isContactSheetOpen, setIsContactSheetOpen] = useState(false);
@@ -534,19 +553,52 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
                           )}
                         </td>
                         <td className="py-2 px-3 text-center">
-                          <PolarisButton
-                            size="slim"
-                            primary={isExpanded}
-                            icon={<Plus className="w-3 h-3" />}
-                            onClick={() =>
-                              setExpandedContactIds((prev) => ({
-                                ...prev,
-                                [contact.id]: !prev[contact.id],
-                              }))
-                            }
-                          >
-                            {isExpanded ? 'بستن' : 'فاکتورها'}
-                          </PolarisButton>
+                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                            <PolarisButton
+                              size="slim"
+                              primary={isExpanded}
+                              icon={<Plus className="w-3 h-3" />}
+                              onClick={() =>
+                                setExpandedContactIds((prev) => ({
+                                  ...prev,
+                                  [contact.id]: !prev[contact.id],
+                                }))
+                              }
+                            >
+                              {isExpanded ? 'بستن' : 'فاکتورها'}
+                            </PolarisButton>
+                            {onUpdateContact && (
+                              <PolarisButton
+                                size="slim"
+                                onClick={() => setEditingContact({ ...contact })}
+                              >
+                                ویرایش
+                              </PolarisButton>
+                            )}
+                            {onSettleContactBalance &&
+                              (contact.debitBalance > 0 || contact.creditBalance > 0) && (
+                                <PolarisButton
+                                  size="slim"
+                                  primary
+                                  onClick={() => {
+                                    const isDebt = contact.debitBalance > 0;
+                                    const maxAmt = isDebt
+                                      ? contact.debitBalance
+                                      : contact.creditBalance;
+                                    setSettlingContact({
+                                      contact,
+                                      settlementType: isDebt ? 'receive_debt' : 'pay_credit',
+                                      maxAmount: maxAmt,
+                                    });
+                                    setSettleAmount(String(maxAmt));
+                                    setSettleAccountCode('110102');
+                                    setSettleNote('');
+                                  }}
+                                >
+                                  تسویه حساب
+                                </PolarisButton>
+                              )}
+                          </div>
                         </td>
                       </tr>
 
@@ -1001,6 +1053,166 @@ export const CrmMarketingModule: React.FC<CrmMarketingModuleProps> = ({
             </select>
           </div>
         </div>
+      </PolarisSheet>
+
+      {/* =====================================================================
+          POLARIS SHEET 3: EDIT CONTACT (Balances Read-Only per BUG-FIN-09)
+         ===================================================================== */}
+      <PolarisSheet
+        open={Boolean(editingContact)}
+        onClose={() => setEditingContact(null)}
+        title={`ویرایش پروفایل مخاطب: ${editingContact?.fullName || ''}`}
+        footer={
+          <>
+            <PolarisButton onClick={() => setEditingContact(null)}>انصراف</PolarisButton>
+            <PolarisButton
+              primary
+              disabled={!editingContact?.fullName.trim()}
+              onClick={() => {
+                if (!editingContact || !onUpdateContact) return;
+                onUpdateContact(editingContact);
+                setEditingContact(null);
+              }}
+            >
+              ذخیره تغییرات
+            </PolarisButton>
+          </>
+        }
+      >
+        {editingContact && (
+          <div className="space-y-3 text-xs">
+            <div>
+              <label className="block font-semibold mb-1">نام کامل / تجاری *</label>
+              <input
+                type="text"
+                value={editingContact.fullName}
+                onChange={(e) =>
+                  setEditingContact({ ...editingContact, fullName: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white dark:bg-slate-900"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">شماره تماس</label>
+              <input
+                type="text"
+                value={editingContact.phone || ''}
+                onChange={(e) =>
+                  setEditingContact({ ...editingContact, phone: e.target.value })
+                }
+                className="w-full px-3 py-2 font-mono border border-slate-300 rounded-lg bg-white dark:bg-slate-900 tabular-nums"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-semibold mb-1 text-slate-500">
+                  مانده بدهی (فقط‌خواندنی 🔒)
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={`${formatCurrency(editingContact.debitBalance || 0)} تومان`}
+                  className="w-full px-3 py-2 font-mono bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-slate-500">
+                  مانده بستانکاری (فقط‌خواندنی 🔒)
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={`${formatCurrency(editingContact.creditBalance || 0)} تومان`}
+                  className="w-full px-3 py-2 font-mono bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              برای حفظ تراز دفتر کل (حساب‌های ۱۱۰۲، ۲۱۰۱ و ۲۱۰۲)، تغییر مانده بدهی یا اعتبار صرفاً از طریق دکمه «تسویه حساب» و صدور سند حسابداری دوبل انجام می‌شود.
+            </p>
+          </div>
+        )}
+      </PolarisSheet>
+
+      {/* =====================================================================
+          POLARIS SHEET 4: SETTLE CONTACT BALANCE (Double-Entry GL)
+         ===================================================================== */}
+      <PolarisSheet
+        open={Boolean(settlingContact)}
+        onClose={() => setSettlingContact(null)}
+        title={`تسویه حساب مالی: ${settlingContact?.contact.fullName || ''}`}
+        footer={
+          <>
+            <PolarisButton onClick={() => setSettlingContact(null)}>انصراف</PolarisButton>
+            <PolarisButton
+              primary
+              disabled={!settlingContact || (Number(settleAmount) || 0) <= 0}
+              onClick={() => {
+                if (!settlingContact || !onSettleContactBalance) return;
+                const amt = Math.min(
+                  settlingContact.maxAmount,
+                  Math.max(0, Number(settleAmount) || 0)
+                );
+                if (amt <= 0) return;
+                onSettleContactBalance({
+                  contactId: settlingContact.contact.id,
+                  amount: amt,
+                  settlementType: settlingContact.settlementType,
+                  accountCode: settleAccountCode,
+                  note: settleNote.trim() || undefined,
+                });
+                setSettlingContact(null);
+              }}
+            >
+              ثبت سند تسویه در دفتر کل
+            </PolarisButton>
+          </>
+        }
+      >
+        {settlingContact && (
+          <div className="space-y-3 text-xs">
+            <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 font-semibold">
+              {settlingContact.settlementType === 'receive_debt'
+                ? `دریافت وجه بدهی از مشتری (حداکثر: ${formatCurrency(settlingContact.maxAmount)} تومان)`
+                : `پرداخت / تسویه بستانکاری مخاطب (حداکثر: ${formatCurrency(settlingContact.maxAmount)} تومان)`}
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">مبلغ تسویه (تومان) *</label>
+              <input
+                type="number"
+                min={1}
+                max={settlingContact.maxAmount}
+                value={settleAmount}
+                onChange={(e) => setSettleAmount(e.target.value)}
+                className="w-full px-3 py-2 font-mono border border-slate-300 rounded-lg bg-white dark:bg-slate-900"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">حساب بانک / صندوق *</label>
+              <select
+                value={settleAccountCode}
+                onChange={(e) => setSettleAccountCode(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white dark:bg-slate-900"
+              >
+                <option value="110102">بانک ملت (کارتخوان / کارت‌به‌کارت) - 110102</option>
+                <option value="110101">بانک سامان - 110101</option>
+                <option value="110103">صندوق نقد مغازه - 110103</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">توضیحات سند</label>
+              <input
+                type="text"
+                value={settleNote}
+                onChange={(e) => setSettleNote(e.target.value)}
+                placeholder="شماره پیگیری / توضیحات..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white dark:bg-slate-900"
+              />
+            </div>
+          </div>
+        )}
       </PolarisSheet>
     </div>
   );

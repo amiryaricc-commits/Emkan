@@ -1447,10 +1447,19 @@ export function restoreStockWithBundles<
   }
 >(
   inventory: T[],
-  returnedLines: { sku: string; qty: number; isDecantMl?: boolean; warehouseKey?: string }[]
+  returnedLines: {
+    sku: string;
+    qty: number;
+    isDecantMl?: boolean;
+    warehouseKey?: string;
+    unitCost?: number;
+    originalDate?: string;
+    sourceVoucherId?: string;
+  }[]
 ): T[] {
   const quantityBySku = new Map<string, number>();
   const quantityBySkuAndWh = new Map<string, Map<string, number>>();
+  const metaBySku = new Map<string, { unitCost?: number; originalDate?: string; sourceVoucherId?: string }>();
   const decantMlBySku = new Map<string, number>();
 
   const addWhRestore = (sku: string, whKey: string, qty: number) => {
@@ -1468,6 +1477,13 @@ export function restoreStockWithBundles<
     const targetWh = line.warehouseKey || 'vitrine';
     quantityBySku.set(line.sku, (quantityBySku.get(line.sku) || 0) + line.qty);
     addWhRestore(line.sku, targetWh, line.qty);
+    if (!metaBySku.has(line.sku)) {
+      metaBySku.set(line.sku, {
+        unitCost: line.unitCost,
+        originalDate: line.originalDate,
+        sourceVoucherId: line.sourceVoucherId,
+      });
+    }
 
     const item = inventory.find((entry) => entry.sku === line.sku);
     if (item?.isBundle && item.bundleComponentItems) {
@@ -1509,19 +1525,21 @@ export function restoreStockWithBundles<
     let updatedFifoLayers = itemRecord.fifoLayers;
     let updatedWarehouseFifoLayers = itemRecord.warehouseFifoLayers;
     if (itemRecord.sector === 'pc') {
-      const unitCost = itemRecord.valuationRate || 0;
-      const returnDate = formatPersianDate(new Date());
+      const meta = metaBySku.get(item.sku);
+      const unitCost = meta?.unitCost && meta.unitCost > 0 ? meta.unitCost : (itemRecord.valuationRate || 0);
+      const returnDate = meta?.originalDate || formatPersianDate(new Date());
+      const sourceVoucherId = meta?.sourceVoucherId || 'POS-RETURN';
       updatedFifoLayers = [
+        { qty: restoredQty, unitCost, date: returnDate, sourceVoucherId },
         ...(itemRecord.fifoLayers || []),
-        { qty: restoredQty, unitCost, date: returnDate, sourceVoucherId: 'POS-RETURN' },
-      ];
+      ].sort((a, b) => comparePersianDates(a.date, b.date));
       if (itemRecord.warehouseFifoLayers && whRestores) {
         updatedWarehouseFifoLayers = { ...itemRecord.warehouseFifoLayers };
         for (const [whKey, whQty] of whRestores.entries()) {
           updatedWarehouseFifoLayers[whKey] = [
+            { qty: whQty, unitCost, date: returnDate, sourceVoucherId },
             ...(updatedWarehouseFifoLayers[whKey] || []),
-            { qty: whQty, unitCost, date: returnDate, sourceVoucherId: 'POS-RETURN' },
-          ];
+          ].sort((a, b) => comparePersianDates(a.date, b.date));
         }
       }
     }
@@ -1664,6 +1682,7 @@ export function calculateThreeBucketShareholderState(params: {
   totalNewPurchasesAmount: number;
   partners: ThreeBucketPartnerInput[];
   unrealizedCreditSales?: number;
+  availableLiquidCash?: number;
   chargeExpansionToWallet?: boolean;
 }): ThreeBucketCalculationResult {
   // گام ۱: کسر مستقیم COGS به عنوان سهم احیای انبار (حق انبار ۵۰/۵۰)
@@ -1714,7 +1733,11 @@ export function calculateThreeBucketShareholderState(params: {
         ? partner.profitAllocationOverride - Math.round(unrealizedCredit * pi)
         : Math.round(realizedNetProfit * pi);
     const maxRealizedWithdrawable = Math.max(0, preProfitPosition + realizedProfitAllocated);
-    const withdrawableBalance = Math.min(Math.max(0, walletBalance), maxRealizedWithdrawable);
+    const rawWithdrawable = Math.min(Math.max(0, walletBalance), maxRealizedWithdrawable);
+    const withdrawableBalance =
+      params.availableLiquidCash !== undefined
+        ? Math.min(rawWithdrawable, Math.max(0, params.availableLiquidCash))
+        : rawWithdrawable;
 
     return {
       id: partner.id,

@@ -1,0 +1,414 @@
+# گزارش جامع ممیزی مهندسی، کشف نقاط کور و سلامت‌سنجی صفر تا صد (Emkan ERP v1.4)
+
+> **سطح ممیزی:** Principal ERP Architect & Static/Dynamic QA Audit (Read-Only Deep Inspection)
+> **پوشش اسکن:** ۱۰۰٪ کدهای هسته، موتور مالی (erpEngine.ts, posService.ts, purchaseInvoice.ts), استور مرکزی (App.tsx), دیتابیس محلی (usePersistentArrayState.ts), گریدهای اکسل‌محور (GoogleSheetsIntakeGrid.tsx, PurchaseInvoiceSheetsGrid.tsx), و کلیه ماژول‌های عملیاتی و تحلیلی.
+> **وضعیت تغییر کد:** مطلقاً بدون تغییر کد (Strictly Read-Only Audit).
+
+------
+
+
+
+## ۱. خلاصه مدیریتی و نمره سلامت سیستم (Executive Summary & Health Score)
+
+در کالبدشکافی خط‌به‌خط سورس‌کد **Emkan ERP v1.4** با تزریق ذهنی (Dry-Run Tracing) «ماتریس داده‌های فرضی استرس (Synthetic Stress Data)»، مشخص شد که اسکلت اصلی موتور محاسباتی (erpEngine.ts) از دقت ریاضی پایه (exactAdd, exactSub, exactMul) و منطق تخصیص تخفیف بزرگ‌ترین باقیمانده (Largest Remainder) برخوردار است؛ اما در **لایه اتصال رویدادهای عملیاتی (App.tsx) به دفتر کل (glEntries)، همگام‌سازی بین حساب‌های انبار (110401 الی 110405)، بازمحاسبهٔ درخت حساب‌ها در AccountingModule.tsx (liveAccounts)، فرمول هزینه‌های عملیاتی در داشبورد BI و ۳ سبد سهامداران، و رفتار رویدادهای کلید در گریدهای شیت**، شکاف‌های ساختاری و باگ‌های بحرانی وجود دارد که باعث واگرایی مستقیم بین ترازنامه، سود و زیان، کیف پول سهامداران و کاردکس انبار می‌شوند.
+
+### ۱.۱. جدول خلاصه تعداد باگ‌ها و یافته‌ها به تفکیک شدت
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+| سطح شدت (Severity)                     | نماد | تعداد یافته‌ها | شرح تأثیر بر سیستم                                           |
+| -------------------------------------- | ---- | ------------- | ------------------------------------------------------------ |
+| **بحرانی (Critical / Blocker)**        | 🔴    | **۸ مورد**    | عدم تراز یا مغایرت دفتر کل (glEntries) با accounts، منفی شدن حساب دارایی ویترین (110401)، دوباره‌شماری کرایه حمل در خرید، ثبت کل تراز بدهکار اسناد روزنامه به‌عنوان «هزینه»، و اسپم شدن masterOptions.tags در هر ضربه کلید در شیت خرید |
+| **بالا (High Priority)**               | 🟠    | **۱۲ مورد**   | عدم برگشت بدهی مشتری (debitBalance) هنگام ابطال فاکتور نسیه، برگشت اشتباه دکانت (میلی‌لیتر به‌جای بطری)، عدم ثبت pushHistoryState هنگام تایپ در شیت (Ctrl+Z)، جا ماندن استورها در Export/Restore و تایم‌ماشین، و کال‌بک‌های تهی (() => {}) |
+| **متوسط (Medium Priority)**            | 🟡    | **۹ مورد**    | به‌هم‌ریختگی رنگ سلول‌ها (cellColors) پس از حذف ردیف، سقف نداشتن کیف پول قابل برداشت سهامداران نسبت به نقدینگی واقعی، مغایرت هزینه تخمینی مصرفی خدمات فنی بین BI و سود و زیان، و عدم نگاشت حروف فارسی بارکدخوان |
+| **کم‌خطر / ظاهری (Low / UX & Hygiene)** | 🔵    | **۶ مورد**    | وجود فایل کامپوننت مرده (PosReturnsPanel.tsx) با قابلیت منسوخ «تعویض»، هاردکد بودن ماه «آبان ۱۴۰۴» در تقویم عملیاتی، و ناهماهنگی جزئی برچسب‌ها |
+| **مجموع کل یافته‌های مستندشده**         | —    | **۳۵ مورد**   | مستندسازی شده با آدرس دقیق فایل، شماره خطوط، علت ریشه‌ای و اثبات ریاضی |
+
+------
+
+
+
+### ۱.۲. نمره سلامت مهندسی به تفکیک ۸ ماژول اصلی (از ۱۰۰)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+| ردیف  | نام ماژول و فایل‌های مرتبط                                    | نمره سلامت (از ۱۰۰) | وضعیت کلی و مهم‌ترین گلوگاه فنی                               |
+| ----- | ------------------------------------------------------------ | ------------------- | ------------------------------------------------------------ |
+| **۱** | **صندوق فروش و مرجوعی (POS & Returns)** (SellingPosModule.tsx, posService.ts, PosReturnsPanel.tsx) | **۸۲ / ۱۰۰**        | فرمول سبد خرید و قفل مرجوعی تکراری (Invoice + SKU) سالم است؛ اما برگشت دکانت (isDecantMl) در استور، ابطال فاکتور نسیه، و هزینه مصرفی خدمات فنی وقتی موجودی صفر است باگ دارند. |
+| **۲** | **مدیریت فاکتور خرید و شیت خرید** (PurchaseInvoiceManager.tsx, PurchaseInvoiceSheetsGrid.tsx, purchaseInvoice.ts) | **۶۸ / ۱۰۰**        | در PurchaseInvoiceSheetsGrid تایپ هر کاراکتر در ستون نام کالا باعث فراخوانی onAddMasterOption('tags') و اسپم Toast می‌شود؛ کرایه حمل در فاکتور خرید نسیه و حساب انبار (110403) باگ دارند. |
+| **۳** | **انبارداری، پذیرش شیت و کاردکس (WMS & Intake)** (InventoryWmsModule.tsx, GoogleSheetsIntakeGrid.tsx) | **۷۶ / ۱۰۰**        | تفکیک ۵ انبار و consumeWarehouseFifoLayers پیاده شده؛ اما شکستن فاکتور خرید به SKU و انتقال بین انبارها هیچ سند حسابداری (GL) بین حساب‌های 110401..110405 صادر نمی‌کنند. |
+| **۴** | **حسابداری دوبل، ترازنامه و سهامداران** (AccountingModule.tsx, erpEngine.ts, App.tsx) | **۶۴ / ۱۰۰**        | liveAccounts در AccountingModule فقط از روی glEntries محاسبه می‌شود، در حالی که برداشت سهامدار، افزایش سرمایه، هزینه ثابت تقویم و ثبت سرقت هیچ رکوردی در glEntries ثبت نمی‌کنند! |
+| **۵** | **هوش تجاری و تحلیل سود (BI & Analytics)** (AnalyticsBiModule.tsx) | **۷۴ / ۱۰۰**        | تفکیک ناخالص/خالص و ویپ/سخت‌افزار دقیق است؛ اما تمام اسناد روزنامه (journalEntries.totalDebit) حتی انتقال بین بانک و صندوق را به‌عنوان «هزینه روزانه» از سود خالص کسر می‌کند! |
+| **۶** | **باشگاه مشتریان و بازاریابی (CRM & Marketing)** (CrmMarketingModule.tsx) | **۸۶ / ۱۰۰**        | تسویه بدهی/اعتبار در App.tsx سند GL صادر می‌کند؛ اما ابطال فاکتور نسیه در POS مانده debitBalance مشتری را در CRM اصلاح نمی‌کند و تغییر دستی بدهی در مودال CRM سند GL نمی‌زند. |
+| **۷** | **تقویم عملیاتی و وب‌شاپ** (OperationalCalendarModule.tsx, SupportWebshopModule.tsx) | **۷۸ / ۱۰۰**        | قفل هزینه ثابت از داخل تقویم عملیاتی (App.tsx:3577) در glEntries ثبت نمی‌شود؛ تقویم ماهانه روی رشتهٔ ثابت ۱۴۰۴/۰۸/ هاردکد شده است؛ فرم نمایندگی وب‌شاپ به crmLeads متصل نیست. |
+| **۸** | **هسته تنظیمات، تایم‌ماشین و ایمپورت حسابفا** (FrappeCoreModule.tsx, usePersistentArrayState.ts, hesabfa*.ts) | **۷۹ / ۱۰۰**        | تراکنش اتمیک IndexedDB و اعتبارسنجی حسابفا دقیق است؛ اما onExportFullData/onRestoreFullData و applySnapshotState چندین استور حیاتی (shareholderDrawings, masterOptions و...) را جا می‌اندازند. |
+
+------
+
+
+
+## ۲. جدول ماتریس تطبیق و همگام‌سازی آمار بین ماژول‌ها (Cross-Module Sync Audit Matrix)
+
+این جدول با اجرای ذهنی کامل **ماتریس داده‌های فرضی استرس** (PINV-140401 به مبلغ خالص کالا 29,500,000 + کرایه 300,000، پذیرش و انتقال به ویترین، فروش SINV-101، مرجوعی اعتباری، خدمت فنی 250,000 با مصرفی 15,000، هزینه ثابت اجاره 15,000,000 و برداشت شریک ۱ به مبلغ 10,000,000) استخراج شده است:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+| شاخص مالی / عملیاتی                                          | مقدار در ماژول مبدأ (POS / انبار / خرید)                     | مقدار در حسابداری (AccountingModule - liveAccounts)          | مقدار در هوش تجاری (AnalyticsBiModule)                       | مقدار در صفحه اصلی (App.tsx Home) / تقویم                    | وضعیت تطبیق (Sync Status) | علت ریشه‌ای مغایرت (Root Cause)                               |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------ |
+| **ارزش موجودی انبار ویترین (110401) پس از خرید، پذیرش و فروش** | کاردکس فیزیکی ویترین: **+24,500,000 ت** (29.5M ورود منهای 5M بهای تمام‌شده فروش) | حساب 110401 در ترازنامه: **-5,000,000 ت (منفی!)** و حساب 110403: **+29,500,000 ت** | ارزش کل موجودی (totalInventoryCostValue): بر اساس stockQty * valuationRate | کارت موجودی Home: بر اساس inventoryItems                     | ❌ **مغایرت بحرانی**       | در App.tsx:1790 خرید به 110403 بدهکار می‌شود؛ در handleCompleteSkuBreakdown (App.tsx:1980) و handleTransferWarehouseStock (App.tsx:2177) هیچ سند GL به 110401 زده نمی‌شود، اما فروش POS (App.tsx:1367) همیشه از 110401 بستانکار می‌کند! |
+| **برداشت شخصی شریک ۱ (10,000,000 ت از بانک 110102)**         | ثبت در shareholderDrawings: **10,000,000 ت**                 | حساب 3103 (برداشت) در درخت حساب‌ها و ترازنامه: **0 ت!** و بانک 110102 بدون کاهش! | تأثیری ندارد (کسر از partner1Drawings در ۳ سبد)              | accounts در App.tsx کاهش یافته (postDoubleEntryToAccounts)   | ❌ **مغایرت بحرانی**       | در App.tsx:3310-3350 (onRecordShareholderDrawing) فقط setAccounts صدا زده می‌شود و **هیچ رکوردی به glEntries اضافه نمی‌شود**؛ در حالی که liveAccounts در AccountingModule.tsx:310-347 مانده‌ها را صرفاً از روی glEntries بازمحاسبه می‌کند! |
+| **ثبت افزایش سرمایه سهامدار (3101)**                         | فرم افزایش سرمایه: **+50,000,000 ت**                         | حساب سرمایه 3101 و بانک در ترازنامه و تراز ۶ ستونی: **بدون تغییر (0 ت اثر)!** | بدون اثر                                                     | در آرایه accounts استور App.tsx ثبت شده                      | ❌ **مغایرت بحرانی**       | در App.tsx:3351-3383 (onRecordShareholderCapitalInjection) هیچ رکوردی در glEntries ثبت نمی‌شود و liveAccounts آن را نادیده می‌گیرد. |
+| **قفل هزینه ثابت ماهانه (15,000,000 ت اجاره) از تب «تقویم عملیاتی»** | ثبت در monthlyExpenseLedger: **15,000,000 ت**                | حساب هزینه 5201 و بانک در ترازنامه و سود و زیان: **0 ت!**    | در BI (monthlyFixedExpensesTotal): **15,000,000 ت** کسر می‌شود | در تقویم قفل شده است                                         | ❌ **مغایرت بحرانی**       | کال‌بک onRecordMonthlyFixedExpense پاس‌داده‌شده به OperationalCalendarModule (App.tsx:3577-3610) برخلاف کال‌بک مشابه در AccountingModule (App.tsx:3187-3252)، آرایه glEntries را آپدیت نمی‌کند! |
+| **ثبت حادثه سرقت / کسری انبار (theftFraudIncidents)**        | کسر از موجودی فیزیکی کالا + ثبت در journalEntries            | در ترازنامه و سود و زیان (liveAccounts حساب 5202 و 110401): **0 ت!** | در BI (dailyJournalExpenses): کسر می‌شود                      | در تب سرقت/کسری انبار ثبت شده                                | ❌ **مغایرت بحرانی**       | تابع handleRecordTheftFraudIncident در App.tsx:2270-2373 اسناد را در journalEntries و accounts می‌نویسد اما در glEntries ثبت نمی‌کند. |
+| **سند روزنامه عمومی غیرهزینه‌ای (مثلاً جابجایی 20,000,000 ت از صندوق به بانک)** | ثبت در journalEntries با totalDebit = 20,000,000             | در سود و زیان حسابداری (expenseAccounts کد 5xxx): **0 ت هزینه** (درست) | در BI (dailyJournalExpenses) و ۳ سبد (threeBucketState): **20,000,000 ت هزینه عملیاتی!** | سود خالص BI به اندازه 20M کمتر از سود حسابداری می‌شود         | ❌ **مغایرت بحرانی**       | در AccountingModule.tsx:396-398 و AnalyticsBiModule.tsx:190-192، به جای جمع زدن خطوط بدهکار حساب‌های گروه 5 (هزینه)، کل j.totalDebit تمام اسناد روزنامه را به‌عنوان هزینه عملیاتی جمع می‌زنند! |
+| **هزینه مواد مصرفی خدمات فنی (15,000 ت پنبه/سیم) در حالت تخمینی یا موجودی صفر** | فاکتور فروش SINV-101: vapeCogsAmount شامل 15,000 ت است       | سود و زیان حسابداری (حساب 5101): **0 ت** بهای تمام‌شده برای این خدمت | در BI (serviceConsumablesCogs و vapeCogs): **15,000 ت** کسر شده است | در ۳ سبد سهامداران: **15,000 ت** به صندوق بازگشت سرمایه اضافه شده | ⚠️ **مغایرت متوسط**        | در App.tsx:1250-1265 و 1363، وقتی مصرفی تخمینی است یا موجودی فیزیکی کلاف صفر است، 15,000 ت داخل newInvoice.cogsAmount و vapeCogsAmount می‌رود اما در GL (totalPhysicalCogs) ثبت نمی‌شود. |
+| **مانده بدهی مشتری (debitBalance) پس از ابطال فاکتور فروش نسیه (voidInvoice)** | فاکتور docstatus = 2 (باطل شده) و حساب 1102 در GL صفر شده    | حساب 1102 (حساب‌های دریافتنی): **0 ت**                        | در گزارش مطالبات BI: **0 ت**                                 | در CRM (customerContacts.debitBalance): **همچنان بدهکار باقی می‌ماند!** | ❌ **مغایرت بالا**         | تابع handleVoidSalesInvoice در App.tsx:1707-1763 حساب‌های GL و موجودی انبار را برمی‌گرداند اما setCustomerContacts را برای کسر debitBalance یا برگشت creditBalance صدا نمی‌زند. |
+
+------
+
+
+
+## ۳. کالبدشکافی کامل باگ‌های منطقی، محاسباتی و حسابداری (Core Financial & Logic Bugs)
+
+در این بخش، تمامی باگ‌های لایه منطق تجاری، حسابداری دوبل، انبار و قیمت‌گذاری با ذکر دقیق فایل، خطوط، علت ریشه‌ای و مثال عددی کالبدشکافی شده‌اند:
+
+------
+
+
+
+### 🔴 [BUG-FIN-01] کوری کامل liveAccounts نسبت به برداشت سهامداران، افزایش سرمایه، هزینه ثابت تقویم و کسری/سرقت انبار (عدم ثبت در glEntries)
+
+- 
+- **مسیر فایل و خطوط:**src/components/AccountingModule.tsx — خطوط 310 تا 347 (const liveAccounts = useMemo(...))src/App.tsx — خطوط 3309 تا 3350 (onRecordShareholderDrawing)src/App.tsx — خطوط 3351 تا 3383 (onRecordShareholderCapitalInjection)src/App.tsx — خطوط 3577 تا 3610 (OperationalCalendarModule -> onRecordMonthlyFixedExpense)src/App.tsx — خطوط 2270 تا 2373 (handleRecordTheftFraudIncident)
+- **علت ریشه‌ای (Root Cause):**
+  در AccountingModule.tsx (خط 311)، شرط if (!glEntries || glEntries.length === 0) return accounts; قرار دارد. به محض اینکه حتی **یک** رکورد در glEntries وجود داشته باشد (مثلاً اولین فاکتور خرید یا فروش ثبت شود)، liveAccounts مقادیر a.balance موجود در استور accounts را **کاملاً دور می‌ریزد** و مانده تمام حساب‌های کل، معین و تفصیلی را از صفر بر اساس فرمول a.openingBalance + sum(glEntries) محاسبه می‌کند (خطوط 321 تا 337).
+  این در حالی است که ۴ عملیات مالی مهم در App.tsx فقط setAccounts(prev => postDoubleEntryToAccounts(prev, ...)) را صدا می‌زنند و **هیچ رکوردی به glEntries اضافه نمی‌کنند**:ثبت برداشت شخصی سهامدار (onRecordShareholderDrawing در App.tsx:3316-3321)ثبت افزایش سرمایه سهامدار (onRecordShareholderCapitalInjection در App.tsx:3358-3363)قفل هزینه ثابت ماهانه از داخل ماژول تقویم عملیاتی (App.tsx:3594-3599)ثبت حادثه سرقت یا کسری انبار (handleRecordTheftFraudIncident در App.tsx:2316-2319)
+- **تزریق داده فرضی (Synthetic Input):**ثبت ۱ فاکتور فروش نقدی به مبلغ 1,000,000 تومان (باعث می‌شود glEntries.length > 0 شود).ثبت برداشت شخصی شریک ۱ به مبلغ 10,000,000 تومان از بانک ملت (110102) به حساب برداشت (3103).قفل کردن هزینه اجاره مغازه در تب «تقویم عملیاتی» به مبلغ 15,000,000 تومان از بانک ملت (110102).
+- **خروجی مورد انتظار (Expected):**در تراز آزمایشی ۶ ستونی، درخت حساب‌ها و ترازنامه: حساب 3103 بدهکار به مبلغ 10,000,000 تومان، حساب 5201 بدهکار به مبلغ 15,000,000 تومان، و حساب بانک 110102 به اندازه 25,000,000 تومان کاهش یابد.
+- **خروجی واقعی کد فعلی (Actual):**در AccountingModule.tsx، حساب 3103 برابر **0 تومان**، حساب 5201 برابر **0 تومان**، و مانده بانک 110102 بدون کاهش (+25,000,000 تومان بیشتر از واقعیت) نمایش داده می‌شود!
+
+------
+
+
+
+### 🔴 [BUG-FIN-02] هاردکد بودن حساب انبار در ثبت فاکتور خرید (110403) و فروش POS (110401) و عدم صدور سند حسابداری هنگام تفکیک SKU و انتقال بین انبارها
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 1789 تا 1791 (handleCreatePurchaseInvoice)src/App.tsx — خطوط 1980 تا 2174 (handleCompleteSkuBreakdown)src/App.tsx — خطوط 2177 تا 2267 (handleTransferWarehouseStock)src/App.tsx — خطوط 1363 تا 1369 (handleCompletePosCheckout)
+- **علت ریشه‌ای (Root Cause):**در handleCreatePurchaseInvoice (خط 1790)، بدون توجه به اینکه کاربر در فرم فاکتور خرید کدام انبار مقصد (pinvWarehouseKey، مثلاً in_transit با کد 110405 یا vitrine با کد 110401) را انتخاب کرده است، کد حساب بدهکار به صورت ثابت '110403' (انبار مرکزی/خارجی) هاردکد شده است:codeTs`{ accountCode: '110403', debit: pinv.totalAmount, credit: 0 }`زمانی که بار در تب «پذیرش و تفکیک محموله» (handleCompleteSkuBreakdown) از فاکتور خرید (purchaseId !== null) تفکیک شده و وارد انبار ویترین (vitrine -> 110401) می‌شود، شرط خط 2129 (if (!payload.purchaseId && totalBatchValue > 0)) مانع از ثبت هرگونه سند GL می‌شود و هیچ سند جابجایی از 110403 به 110401 صادر نمی‌گردد.زمانی که کاربر در تب انبار، کالا را با «انتقال بین انبارها» (handleTransferWarehouseStock در خط 2177) از central_external (110403) به vitrine (110401) منتقل می‌کند، موجودی فیزیکی و لایه‌های FIFO منتقل می‌شوند اما **صفر سند حسابداری** بین حساب‌های معین انبار ثبت می‌شود.در زمان فروش در صندوق (handleCompletePosCheckout خط 1367)، بهای تمام‌شده کالای فروش‌رفته (totalPhysicalCogs) همیشه از حساب هاردکد شدهٔ '110401' (انبار ویترین) بستانکار می‌شود، حتی اگر کالا از انبار مغازه (shop_storage -> 110402) یا انبار خارجی (110403) فروخته شده باشد!
+- **تزریق داده فرضی (Synthetic Input):**ثبت فاکتور خرید PINV-140401 به مبلغ 29,500,000 تومان → تفکیک در شیت پذیرش به داخل انبار ویترین (vitrine) → فروش کالا در POS با بهای تمام‌شده 5,000,000 تومان.
+- **خروجی مورد انتظار (Expected):**مانده حساب 110403 (انبار خارجی): 0 تومان.مانده حساب 110401 (انبار ویترین): +24,500,000 تومان.
+- **خروجی واقعی کد فعلی (Actual):**مانده حساب 110403 روی **+29,500,000 تومان** قفل می‌ماند و مانده حساب دارایی 110401 (انبار ویترین) به **-5,000,000 تومان (منفی!)** سقوط می‌کند.
+
+------
+
+
+
+### 🔴 [BUG-FIN-03] پرداخت نقدی اجباری کرایه حمل (freightAmount) در فاکتور خرید حتی در خریدهای ۱۰۰٪ نسیه و عدم احتساب کرایه در بهای تمام‌شده (Landed Cost) یا بدهی تأمین‌کننده
+
+- 
+- **مسیر فایل و خطوط:**src/components/PurchaseInvoiceManager.tsx — خطوط 250 تا 267 (computedPurchaseGrandTotal, computedPurchaseUnpaidDebt)src/App.tsx — خطوط 1786 تا 1813 (handleCreatePurchaseInvoice)
+- **علت ریشه‌ای (Root Cause):**
+  در PurchaseInvoiceManager.tsx (خط 261)، computedPurchaseGrandTotal برابر است با computedPurchaseSubtotal - lineDiscounts - disc (یعنی شامل pinvFreightCost نیست).
+  سپس در App.tsx (خطوط 1806 تا 1810):codeTs`if (freight > 0) {  jLines.push({    accountCode: paymentAccountCode,    debit: 0,    credit: freight,  }); }`کد فعلی فرض می‌کند که freight همیشه و در ۱۰۰٪ مواقع از حساب نقد/بانک (paymentAccountCode) پرداخت شده است، حتی اگر کاربر فیلد «مبلغ پرداختی (نقد / کارت‌به‌کارت)» را 0 گذاشته باشد (خرید کاملاً نسیه) یا اصلاً حساب بانکی انتخاب نکرده باشد! همچنین کرایه حمل (300,000 تومان) به بهای تمام‌شده واحد کالاها (Landed Cost) اضافه نمی‌شود و مستقیماً به هزینه دوره (5204) می‌رود.
+- **تزریق داده فرضی (Synthetic Input):**ثبت فاکتور خرید PINV-140401 با جمع خالص کالا 29,500,000 تومان، کرایه حمل 300,000 تومان، و مبلغ پرداختی 0 تومان (تماماً نسیه).
+- **خروجی مورد انتظار (Expected):**اگر خرید نسیه است و پرداختی صورت نگرفته، یا کرایه حمل باید به حساب پرداختنی (2101) منظور شود یا دارای کلید مجزای «پرداخت کرایه از صندوق/بانک» باشد.
+- **خروجی واقعی کد فعلی (Actual):**حتی با paidAmount = 0، مبلغ 300,000 تومان از حساب بانک ملت (110102) کسر (بستانکار) می‌شود.
+
+------
+
+
+
+### 🔴 [BUG-FIN-04] تلقی شدن تمام اسناد روزنامه عمومی (journalEntries) به‌عنوان «هزینه عملیاتی» در داشبورد BI و کیف پول ۳ سبد سهامداران
+
+- 
+- **مسیر فایل و خطوط:**src/components/AccountingModule.tsx — خطوط 396 تا 398 (dailyJournalExpenses در threeBucketState)src/components/AnalyticsBiModule.tsx — خطوط 190 تا 192 و 340 تا 349 (dailyJournalExpenses)
+- **علت ریشه‌ای (Root Cause):**
+  در هر دو فایل AccountingModule.tsx و AnalyticsBiModule.tsx، کد زیر نوشته شده است:codeTs`const dailyJournalExpenses = journalEntries  .filter((j) => j.docstatus === 1)  .reduce((s, j) => exactAdd(s, j.totalDebit), 0);`در حسابداری دوبل، «سند روزنامه عمومی (Journal Entry)» می‌تواند برای جابجایی پول بین صندوق و بانک (بدهکار: بانک ۱۱۰۱۰۲ / بستانکار: صندوق ۱۱۰۱۰۳)، اصلاح حساب مشتری، ثبت دارایی ثابت، یا تسویه بدهی استفاده شود. اما کد فعلی بدون بررسی اینکه آیا کد حساب بدهکار در گروه 5 (category === 'هزینه') قرار دارد یا خیر، **کل totalDebit تمام اسناد روزنامه را به‌عنوان هزینه عملیاتی روزانه جمع می‌زند** و از سود خالص کسر می‌کند!
+- **تزریق داده فرضی (Synthetic Input):**کاربر یک سند روزنامه در تب «دفتر روزنامه عمومی» برای واریز 20,000,000 تومان از صندوق مغازه (110103) به بانک ملت (110102) ثبت می‌کند.
+- **خروجی مورد انتظار (Expected):**هزینه عملیاتی = 0 تومان (چون فقط جابجایی بین دو حساب دارایی نقد است).
+- **خروجی واقعی کد فعلی (Actual):**داشبورد BI و مدل ۳ سبد سهامداران مبلغ **20,000,000 تومان هزینه عملیاتی کاذب** شناسایی کرده و سود خالص فروشگاه را 20,000,000 تومان کم می‌کنند (14,000,000 تومان کسر از کیف پول شریک ۱ و 6,000,000 تومان کسر از کیف پول شریک ۲)!
+
+------
+
+
+
+### 🟠 [BUG-FIN-05] فاسد شدن موجودی انبار هنگام مرجوعی دکانت (isDecantMl: true) و عدم بازیابی لایه FIFO در مرجوعی قطعات سخت‌افزار (sector: 'pc')
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 1500 تا 1506 (handleProcessPosReturn)src/utils/erpEngine.ts — خطوط مربوط به تابع restoreStockWithBundles
+- **علت ریشه‌ای (Root Cause):**
+  در handleProcessPosReturn (App.tsx:1500):codeTs`const itemsToRestore = payload.returnedLines.map((l) => ({  sku: l.sku,  qty: l.qty,  warehouseKey: 'vitrine' as WarehouseKey, })); const updatedInventory = restoreStockWithBundles(inventoryItems, itemsToRestore);`فیلد isDecantMl موجود در PosReturnItemLine اصلاً به restoreStockWithBundles پاس داده نمی‌شود! اگر مشتری 15 میلی‌لیتر دکانت (qty: 15, isDecantMl: true) را مرجوع کند، تابع restoreStockWithBundles عدد 15 را به stockQty کالای اصلی اضافه می‌کند؛ یعنی به جای بازگرداندن 15ml به بطری باز (openBottleRemainingMl و آیتم مجازی decant_SKU)، **15 بطری کامل آکبند (معادل ۹۰۰ میلی‌لیتر!)** به موجودی انبار اضافه می‌کند!اگر کالای مرجوعی از صنف کامپیوتر (sector === 'pc') باشد، هنگام فروش از warehouseFifoLayers کسر شده است، اما در زمان مرجوعی، restoreStockWithBundles لایهٔ هزینهٔ FIFO را به fifoLayers / warehouseFifoLayers بازنمی‌گرداند.
+- **تزریق داده فرضی (Synthetic Input):**فروش 15 میلی‌لیتر دکانت از جویس ۶۰ میل (قیمت خرید بطری 420,000 تومان، موجودی آکبند 9 عدد، بطری باز 45ml).سپس ثبت مرجوعی همان ردیف (qty: 15, isDecantMl: true).
+- **خروجی مورد انتظار (Expected):**موجودی بطری آکبند: 9 عدد، موجودی بطری باز (openBottleRemainingMl): 60ml.
+- **خروجی واقعی کد فعلی (Actual):**موجودی بطری آکبند به **24 عدد (9 + 15)** افزایش می‌یابد و ارزش ریالی انبار به اندازه 6,300,000 تومان متورم می‌شود!
+
+------
+
+
+
+### 🟠 [BUG-FIN-06] عدم اصلاح مانده بدهی/اعتبار مشتری (customerContacts) و حساب پیش‌پرداخت (2102) هنگام ابطال فاکتور فروش (handleVoidSalesInvoice)
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 1707 تا 1763 (handleVoidSalesInvoice)src/utils/erpEngine.ts — تابع voidInvoice
+- **علت ریشه‌ای (Root Cause):**زمانی که یک فاکتور فروش نسیه (creditReceivableAmount > 0) یا فاکتوری که در آن از اعتبار مشتری (usedCreditBalance > 0) استفاده شده، توسط کاربر باطل (Void) می‌شود، تابع handleVoidSalesInvoice اسناد GL معکوس صادر کرده و کالاها را به انبار برمی‌گرداند، اما **هیچ تغییری در استور customerContacts ایجاد نمی‌کند**.علاوه بر این، تابع voidInvoice در erpEngine.ts فرض می‌کند کل مابه‌التفاوت totalAmount - paidAmount در حساب 1102 (حساب‌های دریافتنی) بوده است؛ در حالی که اگر بخشی از فاکتور از محل usedCreditBalance (حساب 2102 پیش‌پرداخت و اعتبار مشتریان) تسویه شده باشد، حساب 2102 معکوس نمی‌شود و حساب 1102 به اشتباه بیش از حد بستانکار (منفی) می‌شود.
+- **تزریق داده فرضی (Synthetic Input):**فروش نسیه به مشتری «کیوان رضایی» به مبلغ 1,000,000 تومان (paidAmount = 0). بدهی مشتری در CRM برابر 1,000,000 تومان می‌شود.ابطال فاکتور فوق در جدول فاکتورها.
+- **خروجی مورد انتظار (Expected):**بدهی «کیوان رضایی» در CRM (debitBalance) به 0 تومان بازگردد.
+- **خروجی واقعی کد فعلی (Actual):**حساب 1102 در دفتر کل صفر می‌شود، اما در CRM و صندوق فروش، مشتری «کیوان رضایی» همچنان **1,000,000 تومان بدهکار** نمایش داده می‌شود.
+
+------
+
+
+
+### 🟠 [BUG-FIN-07] واگرایی سود خالص بین حسابداری و BI در «مصرف تخمینی مواد خدمات فنی» (isEstimatedConsumption) یا زمانی که موجودی کلاف مصرفی صفر است
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 1190 تا 1266، 1297 تا 1301 و 1363 تا 1369 (handleCompletePosCheckout)
+- **علت ریشه‌ای (Root Cause):**
+  در handleCompletePosCheckout:اگر تیک «مصرف تخمینی» (isEstimatedConsumption: true) خورده باشد (خط 1199) یا موجودی فیزیکی کالای مصرفی در انبار 0 باشد (خط 1258)، متغیر serviceConsumableCogs برابر 15,000 تومان می‌شود، اما actualConsumableInventoryCogs برابر 0 می‌ماند.در خط 1265، totalCogs = productCogs + serviceConsumableCogs (شامل 15,000 تومان) محاسبه شده و در newInvoice.cogsAmount و newInvoice.vapeCogsAmount (خط 1298) ذخیره می‌شود.اما در خط 1363 برای ثبت در دفتر کل (glEntries)، فقط از totalPhysicalCogs = productCogs + actualConsumableInventoryCogs استفاده می‌شود! یعنی برای آن 15,000 تومان هیچ سند هزینه‌ای در حساب 5101 ثبت نمی‌شود.همچنین در خط 1300، کل درآمد خدمات فنی (serviceRev = 250,000) به newInvoice.vapeRevenueAmount اضافه می‌شود، حتی اگر خدمت فنی مربوط به «تعمیر و اسمبل کامپیوتر» بوده باشد!
+- **تزریق داده فرضی (Synthetic Input):**ثبت خدمت «تعویض پنبه و المنت» با اجرت 250,000 تومان و هزینه مواد مصرفی تخمینی 15,000 تومان.
+- **خروجی مورد انتظار (Expected):**سود خالص در صورت سود و زیان حسابداری، داشبورد BI و ۳ سبد سهامداران یکسان باشد (235,000 تومان یا 250,000 تومان هماهنگ).
+- **خروجی واقعی کد فعلی (Actual):**صورت سود و زیان حسابداری سود را **250,000 تومان** نشان می‌دهد، اما داشبورد BI و ۳ سبد سهامداران سود را **235,000 تومان** محاسبه می‌کنند (15,000 تومان اختلاف تراز).
+
+------
+
+
+
+### 🟡 [BUG-FIN-08] عدم وجود سقف نقدینگی واقعی (Liquid Cash Cap) روی «موجودی قابل برداشت» در کیف پول ۳ سبد سهامداران
+
+- 
+- **مسیر فایل و خطوط:**src/utils/erpEngine.ts — تابع calculateThreeBucketShareholderStatesrc/components/AccountingModule.tsx — خطوط 385 تا 418 و 471 تا 505
+- **علت ریشه‌ای (Root Cause):**
+  تابع calculateThreeBucketShareholderState کل فروش تعهدی (totalRevenue شامل فروش‌های نسیه که هنوز وجه نقدی بابت آن‌ها دریافت نشده است) را مبنای محاسبهٔ grossProfit و netProfit قرار می‌دهد. در نتیجه، اگر فروشگاه 10,000,000 تومان فروش نسیه داشته باشد و موجودی بانک/صندوق 0 تومان باشد، کیف پول سهامداران در تب «سهامداران و ۳ سبد» به شریک ۱ و ۲ اجازه می‌دهد سود تحقق‌یافتهٔ تعهدی را از بانک برداشت کنند (onRecordShareholderDrawing)، که باعث **منفی شدن مانده حساب بانک/صندوق (110101..110103)** می‌شود.
+- **تزریق داده فرضی (Synthetic Input):**موجودی اولیه بانک 0 تومان. فروش نسیه کالا با قیمت خرید 2,000,000 و قیمت فروش 5,000,000 تومان (paidAmount = 0). سپس کلیک روی «ثبت برداشت» به مبلغ 2,100,000 تومان برای شریک ۱.
+- **خروجی مورد انتظار (Expected):**سیستم باید هشدار دهد که نقدینگی آزاد در بانک/صندوق کافی نیست (مانده نقد واقعی 0 تومان است).
+- **خروجی واقعی کد فعلی (Actual):**برداشت ثبت شده و مانده حساب دارایی بانک به **-2,100,000 تومان (منفی)** می‌رسد.
+
+------
+
+
+
+### 🟡 [BUG-FIN-09] ویرایش دستی بدهی/اعتبار مخاطب در مودال CRM بدون ثبت سند حسابداری متناظر در دفتر کل (glEntries)
+
+- 
+- **مسیر فایل و خطوط:**src/components/CrmMarketingModule.tsx — خطوط 550 تا 605 (مودال ویرایش مخاطب و فیلدهای debitBalance / creditBalance)src/App.tsx — خطوط 3462 تا 3490 (onUpdateContact)
+- **علت ریشه‌ای (Root Cause):**
+  در حالی که دکمه‌های «دریافت وجه بدهی» و «تسویه اعتبار» از طریق onSettleContactBalance (App.tsx:3492-3560) سند حسابداری دوبل در glEntries صادر می‌کنند، اگر کاربر در تب CRM روی دکمه «ویرایش» یک مشتری کلیک کند و عدد فیلد «مانده بدهی (نسیه)» یا «مانده بستانکاری (اعتبار)» را مستقیماً تغییر دهد و ذخیره کند، onUpdateContact صرفاً رکورد customerContacts را بازنویسی می‌کند و **هیچ سند تعدیلی در حساب 1102 یا 2102 در glEntries صادر نمی‌شود**.
+- **تزریق داده فرضی (Synthetic Input):**تغییر دستی بدهی مشتری در فرم ویرایش CRM از 500,000 تومان به 0 تومان.
+- **خروجی مورد انتظار (Expected):**یا فیلدهای مانده در فرم ویرایش فقط‌خواندنی (Read-Only) باشند و تغییر فقط از طریق دکمه «تسویه حساب» انجام شود، یا سند تعدیل در 1102 صادر گردد.
+- **خروجی واقعی کد فعلی (Actual):**بدهی مشتری در CRM صفر می‌شود اما حساب دریافتنی 1102 در ترازنامه همچنان 500,000 تومان باقی می‌ماند.
+
+------
+
+
+
+## ۴. کالبدشکافی کامل باگ‌های دکمه‌ها، فرم‌ها، گریدها و رابط کاربری (UI/UX, Buttons, Fields & Grids Audit)
+
+------
+
+
+
+### 🔴 [BUG-GRID-01] اسپم شدن masterOptions.tags و نمایش رگباری Toast در هر ضربه کلید (Keystroke) هنگام تایپ نام کالا در PurchaseInvoiceSheetsGrid.tsx
+
+- 
+- **مسیر فایل و خطوط:**src/components/PurchaseInvoiceSheetsGrid.tsx — خطوط 753 تا 799 (تابع updateRowField)src/App.tsx — خطوط 892 تا 920 (handleAddMasterOption)
+- **علت ریشه‌ای (Root Cause):**
+  در PurchaseInvoiceSheetsGrid.tsx داخل تابع updateRowField که روی رویداد onChange (یعنی با تایپ تک‌تک حروف کیبورد) اجرا می‌شود، در خطوط 780 تا 793 کد زیر قرار دارد:codeTs`if (field === 'itemName' && typeof val === 'string' && val.trim()) {  const matched = catalogItems.find(    (i) => normalizePersianInput(i.name) === normalizePersianInput(val.trim())  );  if (matched) { ... }  else if (!next.parentTag && onAddMasterOption) {    onAddMasterOption('tags', String(val).trim());  } }`و در خطوط 771 تا 773:codeTs`if (field === 'parentTag' && val && onAddMasterOption) {  onAddMasterOption('tags', String(val)); }`زمانی که کاربر قصد دارد یک کالای جدید (مثلاً "سالت ویگاد انبه") را در ستون A (itemName) تایپ کند، چون در حین تایپ حروف اول ("س", "سا", "سال", "سالت"...) هنوز با هیچ کالای کاتالوگ مطابقت کامل (===) ندارد و next.parentTag هم خالی است، در **تک‌تک ضربه‌های کلید** تابع onAddMasterOption('tags', ...) صدا زده می‌شود! و از آنجا که handleAddMasterOption در App.tsx برای هر گزینه جدید showToast صدا می‌زند و در localStorage ذخیره می‌کند، کل لیست دسته‌بندی‌های مادر (masterOptions.tags) با حروف ناقص پر می‌شود!
+- **تزریق داده فرضی (Synthetic Input):**تایپ عبارت ۱۲ حرفی "سالت ویگاد" در ستون «نام کالا / مدل» (itemName) در شیت فاکتور خرید.
+- **خروجی مورد انتظار (Expected):**در حین تایپ هیچ تگی به masterOptions.tags اضافه نشود؛ و اصولاً نام کالا (itemName) نباید وارد لیست دسته‌بندی‌ها (tags) شود.
+- **خروجی واقعی کد فعلی (Actual):**۱۰ دسته‌بندی زباله ("س", "سا", "سال", "سالت", "سالت و", "سالت وی", ...) به masterOptions.tags در کل سیستم اضافه شده و ۱۰ پیام Toast پشت سر هم روی صفحه ظاهر می‌شود!
+
+------
+
+
+
+### 🟠 [BUG-GRID-02] کار نکردن Ctrl+Z (Undo) برای مقادیر تایپ‌شده در سلول‌های هر دو شیت (GoogleSheetsIntakeGrid و PurchaseInvoiceSheetsGrid)
+
+- 
+- **مسیر فایل و خطوط:**src/components/PurchaseInvoiceSheetsGrid.tsx — خطوط 373 تا 399 (pushHistoryState, handleUndo) و خطوط 753 تا 799 (updateRowField)src/components/GoogleSheetsIntakeGrid.tsx — خطوط 397 تا 424 (pushHistoryState, handleUndo) و خطوط 1432 تا 1559 (updateRowField)
+- **علت ریشه‌ای (Root Cause):**
+  در هر دو گرید، تابع pushHistoryState فقط در عملیات‌های دسته‌ای (handlePaste, handleCut, handleClearSelection, handleFillDownRange, handleDuplicateOrFillDown) فراخوانی شده است و در updateRowField (یا هنگام خروج از حالت ویرایش سلول onBlur / Enter) **هرگز pushHistoryState صدا زده نمی‌شود**!
+- **تزریق داده فرضی (Synthetic Input):**کاربر در سلول A1 عبارت "سالت ویگاد" را تایپ می‌کند، Enter می‌زند، در سلول A2 عبارت "پاد کالیبرن" را تایپ می‌کند، و سپس کلید Ctrl+Z (یا دکمه Undo در نوار ابزار شیت) را می‌زند.
+- **خروجی مورد انتظار (Expected):**آخرین تغییر تایپ‌شده ("پاد کالیبرن") به حالت قبل بازگردد.
+- **خروجی واقعی کد فعلی (Actual):**یا هیچ اتفاقی نمی‌افتد (اگر historyIndex === 0 باشد) و یا اگر قبلاً یک Paste انجام شده باشد، **تمام تایپ‌های بعدی کاربر یک‌جا پاک شده** و به وضعیت زمان Paste برمی‌گردد!
+
+------
+
+
+
+### 🟠 [BUG-GRID-03] بلعیده شدن کاراکترهای اول هنگام تایپ مستقیم یا اسکن بارکد روی سلول انتخاب‌شده (<td>) به دلیل تأخیر setTimeout(..., 20)
+
+- 
+- **مسیر فایل و خطوط:**src/components/PurchaseInvoiceSheetsGrid.tsx — خطوط 612 تا 623 (selectCell) و خطوط 944 تا 961 (onKeyDown روی <td>)src/components/GoogleSheetsIntakeGrid.tsx — خطوط 1205 تا 1215 (selectCell) و خطوط 1355 تا 1364 (onKeyDown روی <td>)
+- **علت ریشه‌ای (Root Cause):**
+  زمانی که یک سلول در حالت انتخاب (Selection Mode) است و کاربر بدون دبل‌کلیک، مستقیماً شروع به تایپ سریع یا اسکن با بارکدخوان سخت‌افزاری می‌کند:اولین کلید (مثلاً 'S') روی <td> رویداد onKeyDown را اجرا می‌کند:codeTs`e.preventDefault(); selectCell(rowIdx, colIdx, true); updateRowField(rowIdx, colDef.id, e.key);`در تابع selectCell (خط 616 در PurchaseInvoiceSheetsGrid)، فوکوس روی <input> داخل سلول با setTimeout(..., 20) به تأخیر انداخته شده است!بارکدخوان‌های سخت‌افزاری هر کاراکتر را با فاصلهٔ 5ms تا 15ms ارسال می‌کنند. بنابراین کاراکترهای دوم و سوم ('K', 'U') قبل از اجرای setTimeout(..., 20) همچنان به <td> اصابت می‌کنند و هر بار updateRowField(rowIdx, colDef.id, e.key) مقدار قبلی را **بازنویسی (Overwrite)** می‌کند!حتی پس از فوکوس شدن <input> در GoogleSheetsIntakeGrid.tsx (خط 1648)، چون <input> به صورت autoFocus رندر می‌شود، مرورگر به صورت پیش‌فرض کرسر را در ابتدای متن (Index 0) یا در حالت انتخاب قرار می‌دهد و ترتیب حروف به هم می‌ریزد.
+- **تزریق داده فرضی (Synthetic Input):**قرار گرفتن روی سلول کد کالا (sku) در حالت انتخاب و اسکن بارکد "SKU-POD-01" با سرعت 10ms بین کاراکترها.
+- **خروجی مورد انتظار (Expected):**عبارت کامل "SKU-POD-01" در سلول ثبت شود و با Enter به ردیف بعدی برود.
+- **خروجی واقعی کد فعلی (Actual):**کاراکترهای ابتدایی روی هم بازنویسی شده و عبارتی ناقص مانند "1-POD-0" یا "01" در سلول ثبت می‌شود.
+
+------
+
+
+
+### 🟠 [BUG-UI-01] دکمه‌ها و کال‌بک‌های مرده (Dead Callbacks / No-Op Props) در حسابداری، وب‌شاپ و کد مرده در PosReturnsPanel.tsx
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خط 3136: onSubmitJournalEntry={() => {}}src/App.tsx — خط 3304: onScrapOrSellAsset={() => {}}src/components/SupportWebshopModule.tsx — خطوط 291 تا 300 (فرم آنلاین درخواست نمایندگی فروش)src/components/PosReturnsPanel.tsx — کل فایل (خطوط 1 تا 229)
+- **علت ریشه‌ای (Root Cause):**در App.tsx خط 3304، پراپ onScrapOrSellAsset={() => {}} یک تابع تهی است (هرچند در AccountingModule.tsx فعلاً دکمه‌ای به آن وصل نیست، اما امضای پراپ مرده است).در SupportWebshopModule.tsx (خطوط 291 تا 300)، وقتی کاربر فرم «ارسال فرم آنلاین به واحد فروش (درخواست اخذ نمایندگی)» را پر کرده و ثبت می‌کند، پیام Toast می‌گوید: *«فرم آنلاین درخواست نمایندگی مستقیماً در جدول سرنخ‌های فروش ثبت شد»*، اما در واقع فقط یک استیت محلی (setSubmittedWebFormsCount(c => c + 1)) را بالا می‌برد و **هیچ سرنخی به استور crmLeads در App.tsx اضافه نمی‌کند!**فایل src/components/PosReturnsPanel.tsx یک کامپوننت یتیم (Dead Component) است که در هیچ جای پروژه ایمپورت نشده است، اما همچنان در سورس‌کد باقی مانده و حاوی منطق منسوخ «۲. تعویض با کالای دیگر (exchange)» (خطوط 98 تا 151) و onFocus={(e) => e.target.select()} (خط 145) است.
+
+------
+
+
+
+### 🟡 [BUG-GRID-04] به‌هم‌ریختگی رنگ پس‌زمینه سلول‌ها (cellColors) پس از حذف ردیف یا پاکسازی ردیف‌های خالی در GoogleSheetsIntakeGrid.tsx
+
+- 
+- **مسیر فایل و خطوط:**src/components/GoogleSheetsIntakeGrid.tsx — خطوط 470 تا 480 (applySelectionColor) و خط 1596 (const cellColor = cellColors[\``{colDef.id}`]`)
+- **علت ریشه‌ای (Root Cause):**
+  برخلاف PurchaseInvoiceSheetsGrid.tsx که کلید رنگ سلول‌ها را با شناسه یکتای ردیف (${row.id}:${colDef.id}) ذخیره می‌کند، در GoogleSheetsIntakeGrid.tsx کلید رنگ سلول‌ها بر اساس **شماره ایندکس ردیف (${rowIndex}:${column.id})** ذخیره شده است!
+- **تزریق داده فرضی (Synthetic Input):**کاربر ردیف شماره ۵ را به رنگ سبز درمی‌آورد (cellColors["4:name"] = "#dcfce7"). سپس ردیف شماره ۲ را حذف می‌کند (یا دکمه «حذف ردیف‌های خالی» را می‌زند).
+- **خروجی مورد انتظار (Expected):**رنگ سبز به همراه داده‌های ردیف ۵ به ردیف ۴ منتقل شود.
+- **خروجی واقعی کد فعلی (Actual):**داده‌های ردیف ۵ به ردیف ۴ می‌روند، اما رنگ سبز روی ایندکس 4 (یعنی ردیف ۶ قبلی!) جا می‌ماند.
+
+------
+
+
+
+### 🟡 [BUG-UI-02] عدم تبدیل کاراکترهای کیبورد فارسی در بارکدخوان سراسری (useBarcodeScanner.ts)
+
+- 
+- **مسیر فایل و خطوط:**src/hooks/useBarcodeScanner.ts — خطوط 52 تا 73
+- **علت ریشه‌ای (Root Cause):**
+  بارکدخوان‌های سخت‌افزاری USB در حالت Keyboard Wedge کلیدهای فیزیکی کیبورد را شبیه‌سازی می‌کنند. در محیط ویندوز، زمانی که زبان کیبورد صندوقدار روی **فارسی (FA)** قرار دارد (که در ۹۰٪ مواقع برای تایپ نام مشتری یا جستجو روی فارسی است)، اسکن بارکد انگلیسی "SKU-POD-01" باعث می‌شود event.key حروف فارسی متناظر روی کیبورد ("سند-حخى-۰۱") را تولید کند! هوک useBarcodeScanner.ts هیچ تابع نرمال‌سازی برای نگاشت کلیدهای فیزیکی فارسی به معادل انگلیسی (KeyS -> S, KeyK -> K یا استفاده از event.code) ندارد.
+- **تزریق داده فرضی (Synthetic Input):**کیبورد ویندوز روی زبان فارسی است؛ صندوقدار بارکد "SKU-POD-01" را اسکن می‌کند.
+- **خروجی مورد انتظار (Expected):**هوک بارکدخوان رشتهٔ "SKU-POD-01" را استخراج کرده و کالا را به سبد خرید اضافه کند.
+- **خروجی واقعی کد فعلی (Actual):**رشتهٔ "سند-حخى-۰۱" به onScan ارسال می‌شود و پیام «کالایی با بارکد سند-حخى-۰۱ یافت نشد» نمایش داده می‌شود.
+
+------
+
+
+
+### 🟡 [BUG-UI-03] هاردکد بودن ماه «آبان ۱۴۰۴» (۱۴۰۴/۰۸/) در تقویم عملیاتی (OperationalCalendarModule.tsx)
+
+- 
+- **مسیر فایل و خطوط:**src/components/OperationalCalendarModule.tsx — خط 237 (date: \۱۴۰۴/۰۸/``{toPersian(dayNum)}``)
+- **علت ریشه‌ای (Root Cause):**
+  شبکهٔ ۳۰ روزهٔ تقویم ماهانه و رویدادهای خودکار قالب‌های هزینه ثابت ماهانه، سال و ماه جاری سیستم (formatPersianDate(new Date()).slice(0, 7)) را نمی‌خوانند و به صورت رشتهٔ ثابت '۱۴۰۴/۰۸/' هاردکد شده‌اند. در نتیجه، هر فاکتور خرید یا نسیه‌ای که در تاریخ واقعی امروز (مثلاً سال ۱۴۰۵) ثبت شود، در گرید ماهانهٔ تقویم عملیاتی دیده نمی‌شود!
+
+------
+
+
+
+## ۵. ممیزی لایه ذخیره‌سازی، تایم‌ماشین، بک‌آپ و ایمپورت (Persistence, Backup & Import Audit)
+
+------
+
+
+
+### 🟠 [BUG-PERSIST-01] ناقص بودن خروجی بک‌آپ کامل (onExportFullData) و بازیابی (onRestoreFullData) در App.tsx
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 3783 تا 3839 (onExportFullData و onRestoreFullData)
+- **علت ریشه‌ای (Root Cause):**در onExportFullData (خطوط 3783 تا 3809)، استورهای مهم زیر اصلاً در فایل JSON خروجی قرار داده نشده‌اند:masterOptions (لیست دسته‌بندی‌ها، برندها، طعم‌ها، نیکوتین‌ها)categorySectors (نگاشت صنف ویپ/سخت‌افزار دسته‌بندی‌ها)shareholderSnapshots (اسنپ‌شات‌های تغییر درصد سهامداران)shareholderDrawings (سوابق برداشت شخصی سهامداران)bulkSmsPool (بانک شماره موبایل باشگاه مشتریان)branches (شعبات تعریف‌شده)paymentEntries (اسناد دریافت و پرداخت)در onRestoreFullData (خطوط 3810 تا 3839)، علاوه بر جا ماندن موارد فوق، بازیابی صرفاً با صدا زدن setState انجام می‌شود و atomicCommitMultiStores یا broadcastSnapshotRehydrate فراخوانی نمی‌گردد.
+
+------
+
+
+
+### 🟠 [BUG-PERSIST-02] جا ماندن ۶ استور در بازیابی تایم‌ماشین (buildSnapshotRecord و applySnapshotState)
+
+- 
+- **مسیر فایل و خطوط:**src/App.tsx — خطوط 641 تا 687 (buildSnapshotRecord)، خطوط 712 تا 764 (applySnapshotState) و خطوط 829 تا 890 (handleImportBackupSnapshotFile)
+- **علت ریشه‌ای (Root Cause):**
+  در TimeMachineSnapshotRecord، فیلدهای زیر ذخیره و بازیابی نمی‌شوند:shareholderDrawings (در نتیجه پس از Rollback در تایم‌ماشین، برداشت‌های شخصی سهامداران به حالت قبل برنمی‌گردد و کیف پول ۳ سبد عدد اشتباه نشان می‌دهد!)paymentEntriesfixedAssetscostCenterscrmLeadspromotionRules و bulkSmsPool
+
+------
+
+
+
+### 🟡 [BUG-PERSIST-03] باگ تجمیع paidAmount در ایمپورت فاکتورهای چندردیفه اکسل حسابفا (hesabfaExcelImport.ts)
+
+- 
+- **مسیر فایل و خطوط:**src/utils/hesabfaExcelImport.ts — خطوط 505 تا 533 (buildHesabfaPayloadFromExcelRows)
+- **علت ریشه‌ای (Root Cause):**
+  در خط 521:codeTs`existingInvoice.totalAmount += lineAmount; existingInvoice.paidAmount = Math.max(existingInvoice.paidAmount, paidAmount);`در خروجی اکسل حسابفا، اگر ستون «مبلغ پرداختی» به تفکیک هر ردیف (Line-level paid amount) پر شده باشد، Math.max فقط بزرگ‌ترین ردیف را برمی‌دارد و باعث می‌شود فاکتور تسویه‌شده به‌عنوان «اقساطی فعال / بدهکار» ایمپورت شود؛ و برعکس، اگر در ردیف اول کل مبلغ پرداختی فاکتور نوشته شده باشد و ردیف اول کمتر از کل فاکتور باشد، در ردیف اول (خط 551) وضعیت اولیه نادرست ارزیابی می‌شود.
+
+------
+
+
+
+## ۶. فهرست جامع بهینه‌سازی‌های ضروری (Mandatory Optimizations) و اختیاری (Optional Enhancements)
+
+### ۶.۱. بهینه‌سازی‌های ضروری (Mandatory Optimizations — برای پایداری و صحت داده)
+
+1. 
+2. **یکپارچه‌سازی منبع حقیقت حسابداری (Single Source of Truth for GL & Accounts):**تمام تراکنش‌های مالی در App.tsx (شامل onRecordShareholderDrawing, onRecordShareholderCapitalInjection, onRecordMonthlyFixedExpense در تقویم، و handleRecordTheftFraudIncident) باید الزاماً رکوردهای بدهکار و بستانکار متناظر را در glEntries ثبت کنند تا liveAccounts در AccountingModule.tsx صددرصد با accounts منطبق باشد.
+3. **همگام‌سازی حساب‌های معین انبار (110401 الی 110405) با عملیات فیزیکی انبار:**ایجاد یک تابع کمکی resolveWarehouseAccountCode(whKey: WarehouseKey): string (vitrine -> '110401', shop_storage -> '110402', central_external -> '110403', consignment -> '110404', in_transit -> '110405').استفاده از آن در: ۱) ثبت فاکتور خرید، ۲) تفکیک محموله (handleCompleteSkuBreakdown) برای انتقال ارزش از انبار مبدأ فاکتور به انبار مقصد پذیرش، ۳) انتقال بین انبارها (handleTransferWarehouseStock)، و ۴) کسر بهای تمام‌شده در صندوق فروش (handleCompletePosCheckout) و مرجوعی (handleProcessPosReturn).
+4. **اصلاح فرمول هزینه‌های روزانه در AccountingModule.tsx و AnalyticsBiModule.tsx:**به جای جمع زدن j.totalDebit تمام اسناد روزنامه، فقط خطوط بدهکار (line.debit - line.credit) که کد حساب آن‌ها با '5' شروع می‌شود (و مربوط به اسناد خودکار فروش/خرید نیستند تا دوباره‌شماری نشوند) جمع زده شوند.
+5. **حذف فراخوانی onAddMasterOption('tags') از داخل updateRowField در PurchaseInvoiceSheetsGrid.tsx:**تایپ در ستون itemName هرگز نباید به masterOptions.tags اضافه شود؛ و افزودن دسته‌بندی جدید در ستون parentTag فقط باید در زمان onCommit کمبوباکس (GridSearchableSelect) انجام شود، نه در هر کاراکتر.
+
+### ۶.۲. بهینه‌سازی‌های اختیاری (Optional Enhancements — بهبود عملکرد و تجربه کاربری)
+
+1. 
+2. **حذف کامل فایل کد مرده src/components/PosReturnsPanel.tsx:**جلوگیری از سردرگمی توسعه‌دهندگان بعدی و کاهش حجم باندل.
+3. **افزودن مبدل کیبورد فارسی به انگلیسی در useBarcodeScanner.ts:**نگاشت کاراکترهای فارسی (ضصثقفغعهخحجچشسیبلاتنمکگظطزرذدپو) یا استفاده از event.code هنگام تشخیص اسکن سریع، تا اسکنر در حالت کیبورد فارسی ویندوز بدون خطا کار کند.
+4. **پویاسازی سال و ماه در OperationalCalendarModule.tsx:**جایگزینی رشتهٔ ثابت '۱۴۰۴/۰۸/' با ماه و سال جاری شمسی (formatPersianDate(new Date()).slice(0, 7)) به همراه دکمه‌های «ماه قبل / ماه بعد».
+5. **ثبت تاریخچهٔ Undo (pushHistoryState) در زمان شروع ویرایش سلول (focus / اولین تغییر هر سلول) در هر دو شیت:**به جای ثبت در هر کلید (که حافظه را پر می‌کند)، لحظه‌ای که کاربر وارد سلول می‌شود یا اولین تغییر را در سلول فعلی اعمال می‌کند، یک اسنپ‌شات در historyRef ثبت شود تا Ctrl+Z برای تایپ دستی هم دقیق کار کند.
+
+------
+
+
+
+## ۷. چک‌لیست اولویت‌بندی‌شده اجرایی برای توسعه‌دهنده (Step-by-Step Fix Blueprint)
+
+در صورتی که دستور شروع کدنویسی و رفع باگ‌ها را صادر فرمایید، ترتیب دقیق و بدون ریسک اجرای اصلاحات در ۵ گام مهندسی به شرح زیر خواهد بود:
+
+- **گام ۱ (رفع باگ‌های بحرانی دفتر کل و ترازنامه — FIN-01, FIN-02, FIN-03, FIN-04):**افزودن ثبت GLEntryRecord به توابع onRecordShareholderDrawing, onRecordShareholderCapitalInjection, onRecordMonthlyFixedExpense (تقویم) و handleRecordTheftFraudIncident در src/App.tsx.اتصال پویا و دقیق کدهای حساب ۵ انبار (110401..110405) در خرید، پذیرش شیت، انتقال انبار و فروش POS در src/App.tsx.اصلاح محاسبهٔ dailyJournalExpenses در AccountingModule.tsx و AnalyticsBiModule.tsx به گونه‌ای که فقط خطوط بدهکار حساب‌های هزینه (5xxx) را جمع بزند.**گام ۲ (رفع باگ‌های صندوق فروش، مرجوعی دکانت، ابطال نسیه و خدمات فنی — FIN-05, FIN-06, FIN-07, FIN-08):**اصلاح handleProcessPosReturn در src/App.tsx و restoreStockWithBundles در src/utils/erpEngine.ts برای بازگرداندن صحیح میلی‌لیتر دکانت (isDecantMl) به بطری باز (openBottleRemainingMl و decant_SKU) و بازیابی لایه FIFO در صنف سخت‌افزار.اصلاح handleVoidSalesInvoice در src/App.tsx برای بازگرداندن debitBalance و creditBalance مشتری در customerContacts و حساب 2102.همسان‌سازی ثبت حسابداری هزینه مصرفی خدمات فنی با newInvoice.cogsAmount و اعمال سقف نقدینگی روی برداشت سهامداران.**گام ۳ (رفع باگ‌های گرید شیت خرید و شیت پذیرش — GRID-01, GRID-02, GRID-03, GRID-04):**حذف فراخوانی onAddMasterOption('tags') هنگام تایپ در itemName در PurchaseInvoiceSheetsGrid.tsx (خطوط 789-792).افزودن ثبت هوشمند pushHistoryState برای تغییرات تایپی سلول‌ها در هر دو شیت (PurchaseInvoiceSheetsGrid.tsx و GoogleSheetsIntakeGrid.tsx).حذف تأخیر setTimeout(..., 20) هنگام شروع تایپ روی سلول انتخاب‌شده و کلیدگذاری cellColors بر اساس row.rowId در GoogleSheetsIntakeGrid.tsx.**گام ۴ (تکمیل لایه ذخیره‌سازی، بک‌آپ و تایم‌ماشین — PERSIST-01, PERSIST-02):**اضافه کردن استورهای جامانده (shareholderDrawings, masterOptions, categorySectors, shareholderSnapshots, paymentEntries, fixedAssets, costCenters, crmLeads, promotionRules, bulkSmsPool, branches) به onExportFullData, onRestoreFullData, buildSnapshotRecord و applySnapshotState در src/App.tsx.**گام ۵ (پاکسازی UI، بارکدخوان و تقویم عملیاتی — UI-01, UI-02, UI-03):**حذف کامپوننت مرده PosReturnsPanel.tsx، اتصال فرم نمایندگی وب‌شاپ به crmLeads، افزودن نرمال‌ساز کیبورد فارسی به useBarcodeScanner.ts، و پویاسازی تاریخ ماه جاری در OperationalCalendarModule.tsx.

@@ -790,6 +790,64 @@ export function App() {
       setBranches(snap.branches);
     }
     setCurrentSnapshotIndex(idx);
+    void atomicCommitMultiStores([
+      { storageKey: 'emkan.v4.accounts', value: snap.accounts },
+      { storageKey: 'emkan.v1.gl-entries', value: snap.glEntries },
+      { storageKey: 'emkan.v1.journal-entries', value: snap.journalEntries },
+      { storageKey: 'emkan.v1.sales-invoices', value: snap.salesInvoices },
+      { storageKey: 'emkan.v1.purchase-invoices', value: snap.purchaseInvoices },
+      { storageKey: 'emkan.v1.inventory-items', value: snap.inventoryItems },
+      { storageKey: 'emkan.v1.customer-contacts', value: snap.customerContacts },
+      { storageKey: 'emkan.v4.shareholders', value: snap.shareholders },
+      ...(snap.shareholderSnapshots
+        ? [{ storageKey: 'emkan.v4.shareholder-snapshots', value: snap.shareholderSnapshots }]
+        : []),
+      ...(snap.shareholderDrawings
+        ? [{ storageKey: 'emkan.v4.shareholder-drawings', value: snap.shareholderDrawings }]
+        : []),
+      ...(snap.monthlyExpenseLedger
+        ? [{ storageKey: 'emkan.v4.monthly-expense-ledger', value: snap.monthlyExpenseLedger }]
+        : []),
+      ...(snap.stockLedgerEntries
+        ? [{ storageKey: 'emkan.v4.stock-ledger-entries', value: snap.stockLedgerEntries }]
+        : []),
+      ...(snap.theftFraudIncidents
+        ? [{ storageKey: 'emkan.v4.theft-fraud-incidents', value: snap.theftFraudIncidents }]
+        : []),
+      ...(snap.calendarEvents
+        ? [{ storageKey: 'emkan.v4.calendar-events', value: snap.calendarEvents }]
+        : []),
+      ...(snap.customerWishlist
+        ? [{ storageKey: 'emkan.v4.customer-wishlist', value: snap.customerWishlist }]
+        : []),
+      ...(snap.recurringTemplates
+        ? [{ storageKey: 'emkan.v4.recurring-templates', value: snap.recurringTemplates }]
+        : []),
+      ...(snap.paymentEntries
+        ? [{ storageKey: 'emkan.v1.payment-entries', value: snap.paymentEntries }]
+        : []),
+      ...(snap.fixedAssets
+        ? [{ storageKey: 'emkan.v4.fixed-assets', value: snap.fixedAssets }]
+        : []),
+      ...(snap.costCenters
+        ? [{ storageKey: 'emkan.v4.cost-centers', value: snap.costCenters }]
+        : []),
+      ...(snap.crmLeads
+        ? [{ storageKey: 'emkan.v1.crm-leads', value: snap.crmLeads }]
+        : []),
+      ...(snap.promotionRules
+        ? [{ storageKey: 'emkan.v1.promotion-rules', value: snap.promotionRules }]
+        : []),
+      ...(snap.warehouses
+        ? [{ storageKey: 'emkan.v4.warehouses', value: snap.warehouses }]
+        : []),
+      ...(snap.bulkSmsPool
+        ? [{ storageKey: 'emkan.v4.bulk-sms-pool', value: snap.bulkSmsPool }]
+        : []),
+      ...(snap.branches
+        ? [{ storageKey: 'emkan.v4.branches', value: snap.branches }]
+        : []),
+    ]);
     // Trigger full state rehydration across all mounted components and open tabs
     setRehydrationVersion((v) => v + 1);
     broadcastSnapshotRehydrate(snap.id);
@@ -904,12 +962,21 @@ export function App() {
         masterOptions: parsed.masterOptions || masterOptions,
         categorySectors: parsed.categorySectors || categorySectors,
         shareholderSnapshots: parsed.shareholderSnapshots || shareholderSnapshots,
+        shareholderDrawings: parsed.shareholderDrawings || shareholderDrawings,
         monthlyExpenseLedger: parsed.monthlyExpenseLedger || monthlyExpenseLedger,
         stockLedgerEntries: parsed.stockLedgerEntries || stockLedgerEntries,
         theftFraudIncidents: parsed.theftFraudIncidents || theftFraudIncidents,
         calendarEvents: parsed.calendarEvents || calendarEvents,
         customerWishlist: parsed.customerWishlist || customerWishlist,
         recurringTemplates: parsed.recurringTemplates || recurringTemplates,
+        paymentEntries: parsed.paymentEntries || paymentEntries,
+        fixedAssets: parsed.fixedAssets || fixedAssets,
+        costCenters: parsed.costCenters || costCenters,
+        crmLeads: parsed.crmLeads || crmLeads,
+        promotionRules: parsed.promotionRules || promotionRules,
+        warehouses: parsed.warehouses || warehouses,
+        bulkSmsPool: parsed.bulkSmsPool || bulkSmsPool,
+        branches: parsed.branches || branches,
       };
 
       setBackupSnapshots((prev) => {
@@ -1238,17 +1305,27 @@ export function App() {
     // Deduct service consumables from Vitrine warehouse if physically linked & available
     let serviceConsumableCogs = 0;
     let actualConsumableInventoryCogs = 0;
+    let vapeServiceRev = 0;
+    let pcServiceRev = 0;
+    let vapeServiceCogs = 0;
+    let pcServiceCogs = 0;
+    const normalizedServiceLines = payload.serviceLines.map((sLine) => {
+      let resolvedLineCost = 0;
+      let lineSector: 'vape' | 'pc' =
+        detectCategorySector(sLine.serviceTitle || '', categorySectors) === 'pc'
+          ? 'pc'
+          : 'vape';
 
-    for (const sLine of payload.serviceLines) {
       if (sLine.isEstimatedConsumption && (sLine.estimatedMaterialCost || 0) > 0) {
-        // Variable/uncounted consumable (e.g. Cotton sheets):
         const matCost = Math.max(0, sLine.estimatedMaterialCost || 0);
+        resolvedLineCost = matCost;
         serviceConsumableCogs = exactAdd(serviceConsumableCogs, matCost);
 
         if (sLine.linkedConsumableSku) {
           const cIdx = updatedInventory.findIndex((i) => i.sku === sLine.linkedConsumableSku);
           if (cIdx !== -1) {
             const cItem = updatedInventory[cIdx];
+            if (cItem.sector === 'pc') lineSector = 'pc';
             newStockLedgerRows.push({
               id: `sle-srv-est-${Date.now()}-${cItem.sku}`,
               postingDate: todayStr,
@@ -1270,6 +1347,7 @@ export function App() {
         const cIdx = updatedInventory.findIndex((i) => i.sku === sLine.linkedConsumableSku);
         if (cIdx !== -1) {
           const cItem = updatedInventory[cIdx];
+          if (cItem.sector === 'pc') lineSector = 'pc';
           const reqQty = sLine.linkedConsumableQty || 1;
           const whStock = { ...(cItem.warehouseStock || {}) };
           const availableVitrine = whStock.vitrine ?? cItem.stockQty;
@@ -1287,6 +1365,7 @@ export function App() {
               totalOutQty: (cItem.totalOutQty ?? 0) + deductQty,
             };
             const itemCost = exactMul(deductQty, cItem.valuationRate || 0);
+            resolvedLineCost = itemCost;
             serviceConsumableCogs = exactAdd(serviceConsumableCogs, itemCost);
             actualConsumableInventoryCogs = exactAdd(actualConsumableInventoryCogs, itemCost);
 
@@ -1308,17 +1387,31 @@ export function App() {
           } else {
             // Physical stock is 0: do not force inventory negative, but record cost in serviceConsumableCogs for invoice stats
             const nominalCost = exactMul(reqQty, cItem.valuationRate || sLine.consumableCost || 0);
+            resolvedLineCost = nominalCost;
             serviceConsumableCogs = exactAdd(serviceConsumableCogs, nominalCost);
           }
         }
+      } else if ((sLine.consumableCost || 0) > 0) {
+        resolvedLineCost = Math.max(0, sLine.consumableCost || 0);
+        serviceConsumableCogs = exactAdd(serviceConsumableCogs, resolvedLineCost);
       }
-    }
+
+      if (lineSector === 'pc') {
+        pcServiceRev = exactAdd(pcServiceRev, sLine.feeAmount || 0);
+        pcServiceCogs = exactAdd(pcServiceCogs, resolvedLineCost);
+      } else {
+        vapeServiceRev = exactAdd(vapeServiceRev, sLine.feeAmount || 0);
+        vapeServiceCogs = exactAdd(vapeServiceCogs, resolvedLineCost);
+      }
+
+      return {
+        ...sLine,
+        consumableCost: resolvedLineCost,
+      };
+    });
 
     const totalCogs = exactAdd(exactAdd(vapeCogs, pcCogs), serviceConsumableCogs);
-    const serviceRev = payload.serviceLines.reduce(
-      (sum, line) => exactAdd(sum, line.feeAmount),
-      0
-    );
+    const serviceRev = exactAdd(vapeServiceRev, pcServiceRev);
     const productRev = Math.max(0, payload.netTotal - serviceRev);
 
     const newInvoice: SalesInvoiceRecord = {
@@ -1347,13 +1440,13 @@ export function App() {
       totalAmount: payload.netTotal,
       paidAmount: payload.paidAmount,
       cogsAmount: totalCogs,
-      vapeCogsAmount: vapeCogs + serviceConsumableCogs,
-      pcCogsAmount: pcCogs,
-      vapeRevenueAmount: vapeRev + serviceRev,
-      pcRevenueAmount: pcRev,
+      vapeCogsAmount: exactAdd(vapeCogs, vapeServiceCogs),
+      pcCogsAmount: exactAdd(pcCogs, pcServiceCogs),
+      vapeRevenueAmount: exactAdd(vapeRev, vapeServiceRev),
+      pcRevenueAmount: exactAdd(pcRev, pcServiceRev),
       itemsSummary: [
         ...payload.cartLines.map((l) => `${l.qty} ${l.uom} ${l.name}`),
-        ...payload.serviceLines.map((s) => `خدمات: ${s.serviceTitle}`),
+        ...normalizedServiceLines.map((s) => `خدمات: ${s.serviceTitle}`),
       ].join(' + '),
       lines: payload.cartLines.map((l, idx) => ({
         id: `line-${Date.now()}-${idx}`,
@@ -1372,7 +1465,7 @@ export function App() {
         sector: l.sector,
         warehouseKey: l.warehouseKey,
       })),
-      serviceLines: payload.serviceLines,
+      serviceLines: normalizedServiceLines,
     };
 
     // Double-entry lines
@@ -1570,12 +1663,20 @@ export function App() {
     }
 
     // Restore returned items in inventory
-    const itemsToRestore = itemsToReturn.map((l) => ({
-      sku: l.sku,
-      qty: l.qty,
-      isDecantMl: l.isDecantMl,
-      warehouseKey: l.warehouseKey,
-    }));
+    const itemsToRestore = itemsToReturn.map((l) => {
+      const origLine = inv.lines?.find(
+        (ol) => (l.lineId && ol.id === l.lineId) || ol.sku === l.sku
+      );
+      return {
+        sku: l.sku,
+        qty: l.qty,
+        isDecantMl: l.isDecantMl,
+        warehouseKey: l.warehouseKey || origLine?.warehouseKey,
+        unitCost: origLine?.valuationRate,
+        originalDate: inv.date,
+        sourceVoucherId: inv.invoiceNo,
+      };
+    });
     const nextInventory = restoreStockWithBundles(inventoryItems, itemsToRestore);
 
     // Financial calculations
@@ -1931,7 +2032,7 @@ export function App() {
       pinv.inventoryAccountCode ||
       matchedWarehouse?.accountCode ||
       (pinv.warehouseKey ? WH_ACC_MAP[pinv.warehouseKey] : undefined) ||
-      '110403';
+      '110401';
     const ledgerLines: { accountCode: string; debit: number; credit: number }[] = [
       { accountCode: purchaseInvAccCode, debit: pinv.totalAmount, credit: 0 },
     ];
@@ -1945,13 +2046,13 @@ export function App() {
         credit: paid,
       });
     }
-    const isFreightOnCredit = freight > 0 && paid === 0 && !pinv.paymentAccountCode;
+    const isFreightOnCredit = freight > 0 && paid === 0;
     const totalPayableCredit = unpaid + (isFreightOnCredit ? freight : 0);
     if (totalPayableCredit > 0) {
       ledgerLines.push({ accountCode: '2101', debit: 0, credit: totalPayableCredit });
     }
     if (freight > 0 && !isFreightOnCredit) {
-      // Freight is paid out from cash/bank when a payment account or cash payment exists
+      // Freight is paid out from cash/bank when a cash payment exists
       ledgerLines.push({
         accountCode: pinv.paymentAccountCode || '110102',
         debit: 0,
@@ -1963,7 +2064,7 @@ export function App() {
     const nextPurchaseInvoices = [
       {
         ...invoiceWithSupplierId,
-        warehouseKey: pinv.warehouseKey || matchedWarehouse?.key,
+        warehouseKey: pinv.warehouseKey || matchedWarehouse?.key || 'vitrine',
         inventoryAccountCode: purchaseInvAccCode,
       },
       ...purchaseInvoices,
@@ -2005,10 +2106,12 @@ export function App() {
     setAccounts(nextAccounts);
     setPurchaseInvoices(nextPurchaseInvoices);
     setGlEntries(nextGlEntries);
-    if (unpaid > 0) {
+    if (totalPayableCredit > 0) {
       setCustomerContacts(nextCustomerContacts);
     }
     recordAuditLog('ثبت فاکتور خرید بار', `${pinv.billNo}: ${pinv.supplierName}`, 'خرید');
+    setInventoryInitialTab('sku_allocation');
+    setActiveWorkspace('stock');
 
     showToast(
       `فاکتور خرید «${pinv.billNo}» ثبت شد. اکنون در بخش «پذیرش و کدگذاری کالا» مشخصات فنی را وارد کنید.`
@@ -3984,6 +4087,165 @@ export function App() {
                   )
                 );
               }}
+              onUpdateContact={(updatedContact) => {
+                const existing = customerContacts.find((c) => c.id === updatedContact.id);
+                if (!existing) return;
+                const oldDebit = existing.debitBalance ?? 0;
+                const newDebit = updatedContact.debitBalance ?? 0;
+                const oldCredit = existing.creditBalance ?? 0;
+                const newCredit = updatedContact.creditBalance ?? 0;
+                const debitDelta = exactSub(newDebit, oldDebit);
+                const creditDelta = exactSub(newCredit, oldCredit);
+
+                setCustomerContacts((prev) =>
+                  prev.map((c) => (c.id === updatedContact.id ? updatedContact : c))
+                );
+
+                // [BUG-FIN-09] Sync GL if balance was adjusted
+                const adjLines: { accountCode: string; debit: number; credit: number }[] = [];
+                if (debitDelta > 0) {
+                  adjLines.push(
+                    { accountCode: '1102', debit: debitDelta, credit: 0 },
+                    { accountCode: '3101', debit: 0, credit: debitDelta }
+                  );
+                } else if (debitDelta < 0) {
+                  const absDelta = Math.abs(debitDelta);
+                  adjLines.push(
+                    { accountCode: '3101', debit: absDelta, credit: 0 },
+                    { accountCode: '1102', debit: 0, credit: absDelta }
+                  );
+                }
+                const creditAcc = updatedContact.contactCategory === 'supplier' ? '2101' : '2102';
+                if (creditDelta > 0) {
+                  adjLines.push(
+                    { accountCode: '3101', debit: creditDelta, credit: 0 },
+                    { accountCode: creditAcc, debit: 0, credit: creditDelta }
+                  );
+                } else if (creditDelta < 0) {
+                  const absDelta = Math.abs(creditDelta);
+                  adjLines.push(
+                    { accountCode: creditAcc, debit: absDelta, credit: 0 },
+                    { accountCode: '3101', debit: 0, credit: absDelta }
+                  );
+                }
+                if (adjLines.length > 0) {
+                  const today = formatPersianDate(new Date());
+                  const vNo = `CRM-ADJ-${Date.now().toString().slice(-4)}`;
+                  setAccounts((curr) => postDoubleEntryToAccounts(curr, adjLines));
+                  setGlEntries((prev) => [
+                    ...adjLines.map((l, idx) => ({
+                      id: `gle-crm-adj-${Date.now()}-${idx}`,
+                      postingDate: today,
+                      voucherType: 'Journal Entry' as const,
+                      voucherNo: vNo,
+                      accountCode: l.accountCode,
+                      accountName: accounts.find((a) => a.code === l.accountCode)?.name || l.accountCode,
+                      partyId: updatedContact.id,
+                      partyName: updatedContact.fullName,
+                      debit: l.debit,
+                      credit: l.credit,
+                      costCenter: 'CC-101',
+                      branchDimension: defaultBranch,
+                      remarks: `تعدیل مانده مخاطب «${updatedContact.fullName}» در CRM`,
+                      timestamp: Date.now() + idx,
+                    })),
+                    ...prev,
+                  ]);
+                }
+                showToast(`اطلاعات مخاطب «${updatedContact.fullName}» بروزرسانی شد.`);
+              }}
+              onSettleContactBalance={({ contactId, amount, settlementType, accountCode, note }) => {
+                const contact = customerContacts.find((c) => c.id === contactId);
+                if (!contact || amount <= 0) return;
+                const today = formatPersianDate(new Date());
+                const vNo = `PAY-CRM-${Date.now().toString().slice(-5)}`;
+                const ledgerLines: { accountCode: string; debit: number; credit: number }[] = [];
+
+                if (settlementType === 'receive_debt') {
+                  ledgerLines.push(
+                    { accountCode, debit: amount, credit: 0 },
+                    { accountCode: '1102', debit: 0, credit: amount }
+                  );
+                  setCustomerContacts((prev) =>
+                    prev.map((c) =>
+                      c.id === contactId
+                        ? { ...c, debitBalance: Math.max(0, (c.debitBalance ?? 0) - amount) }
+                        : c
+                    )
+                  );
+                } else {
+                  const targetLiabilityAcc =
+                    contact.contactCategory === 'supplier' ? '2101' : '2102';
+                  ledgerLines.push(
+                    { accountCode: targetLiabilityAcc, debit: amount, credit: 0 },
+                    { accountCode, debit: 0, credit: amount }
+                  );
+                  setCustomerContacts((prev) =>
+                    prev.map((c) =>
+                      c.id === contactId
+                        ? { ...c, creditBalance: Math.max(0, (c.creditBalance ?? 0) - amount) }
+                        : c
+                    )
+                  );
+                }
+
+                setAccounts((curr) => postDoubleEntryToAccounts(curr, ledgerLines));
+                setGlEntries((prev) => [
+                  ...ledgerLines.map((l, idx) => ({
+                    id: `gle-crm-settle-${Date.now()}-${idx}`,
+                    postingDate: today,
+                    voucherType: 'Payment Entry' as const,
+                    voucherNo: vNo,
+                    accountCode: l.accountCode,
+                    accountName: accounts.find((a) => a.code === l.accountCode)?.name || l.accountCode,
+                    partyId: contact.id,
+                    partyName: contact.fullName,
+                    debit: l.debit,
+                    credit: l.credit,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                    remarks: note || `تسویه حساب مخاطب «${contact.fullName}» در CRM`,
+                    timestamp: Date.now() + idx,
+                  })),
+                  ...prev,
+                ]);
+                setPaymentEntries((prev) => [
+                  {
+                    id: `pe-crm-${Date.now()}`,
+                    paymentNo: vNo,
+                    postingDate: today,
+                    docstatus: 1,
+                    paymentType:
+                      settlementType === 'receive_debt'
+                        ? 'دریافت از مشتری'
+                        : contact.contactCategory === 'supplier'
+                          ? 'پرداخت به تأمین‌کننده'
+                          : 'استرداد وجه به مشتری',
+                    partyType: contact.contactCategory === 'supplier' ? 'تأمین‌کننده' : 'مشتری',
+                    partyId: contact.id,
+                    partyName: contact.fullName,
+                    modeOfPayment: accountCode === '110103' ? 'نقد (صندوق)' : 'کارت به کارت',
+                    bankAccountCode: accountCode,
+                    paidFromAccount:
+                      settlementType === 'receive_debt'
+                        ? '1102'
+                        : accountCode,
+                    paidToAccount:
+                      settlementType === 'receive_debt'
+                        ? accountCode
+                        : contact.contactCategory === 'supplier'
+                          ? '2101'
+                          : '2102',
+                    amount,
+                    referenceNo: vNo,
+                    referenceVoucherNo: vNo,
+                    costCenter: 'CC-101',
+                    branchDimension: defaultBranch,
+                  },
+                  ...prev,
+                ]);
+                showToast(`تسویه حساب (${formatCurrency(amount)} تومان) برای «${contact.fullName}» ثبت شد.`);
+              }}
               onImportBulkSmsNumbers={(items) => {
                 setBulkSmsPool((prev) => [...items, ...prev]);
                 recordAuditLog('ایمپورت شماره پیامک', `افزودن ${items.length} شماره به بانک پیامک انبوه`, 'سیستم');
@@ -4320,39 +4582,119 @@ export function App() {
                 showToast('فایل پشتیبان کامل سیستم صادر و دانلود شد.');
               }}
               onRestoreFullData={(dump) => {
-                if (Array.isArray(dump.accounts)) setAccounts(dump.accounts);
-                if (Array.isArray(dump.inventoryItems)) setInventoryItems(dump.inventoryItems);
-                if (Array.isArray(dump.customerContacts)) setCustomerContacts(dump.customerContacts);
-                if (Array.isArray(dump.salesInvoices)) setSalesInvoices(dump.salesInvoices);
-                if (Array.isArray(dump.purchaseInvoices)) setPurchaseInvoices(dump.purchaseInvoices);
-                if (Array.isArray(dump.shareholders)) setShareholders(dump.shareholders);
-                if (Array.isArray(dump.shareholderSnapshots)) setShareholderSnapshots(dump.shareholderSnapshots);
-                if (Array.isArray(dump.shareholderDrawings)) setShareholderDrawings(dump.shareholderDrawings);
+                const commits: { storageKey: string; value: unknown[] }[] = [];
+                if (Array.isArray(dump.accounts)) {
+                  setAccounts(dump.accounts);
+                  commits.push({ storageKey: 'emkan.v4.accounts', value: dump.accounts });
+                }
+                if (Array.isArray(dump.inventoryItems)) {
+                  setInventoryItems(dump.inventoryItems);
+                  commits.push({ storageKey: 'emkan.v1.inventory-items', value: dump.inventoryItems });
+                }
+                if (Array.isArray(dump.customerContacts)) {
+                  setCustomerContacts(dump.customerContacts);
+                  commits.push({ storageKey: 'emkan.v1.customer-contacts', value: dump.customerContacts });
+                }
+                if (Array.isArray(dump.salesInvoices)) {
+                  setSalesInvoices(dump.salesInvoices);
+                  commits.push({ storageKey: 'emkan.v1.sales-invoices', value: dump.salesInvoices });
+                }
+                if (Array.isArray(dump.purchaseInvoices)) {
+                  setPurchaseInvoices(dump.purchaseInvoices);
+                  commits.push({ storageKey: 'emkan.v1.purchase-invoices', value: dump.purchaseInvoices });
+                }
+                if (Array.isArray(dump.shareholders)) {
+                  setShareholders(dump.shareholders);
+                  commits.push({ storageKey: 'emkan.v4.shareholders', value: dump.shareholders });
+                }
+                if (Array.isArray(dump.shareholderSnapshots)) {
+                  setShareholderSnapshots(dump.shareholderSnapshots);
+                  commits.push({ storageKey: 'emkan.v4.shareholder-snapshots', value: dump.shareholderSnapshots });
+                }
+                if (Array.isArray(dump.shareholderDrawings)) {
+                  setShareholderDrawings(dump.shareholderDrawings);
+                  commits.push({ storageKey: 'emkan.v4.shareholder-drawings', value: dump.shareholderDrawings });
+                }
                 if (dump.masterOptions && typeof dump.masterOptions === 'object') {
                   setMasterOptions(dump.masterOptions);
+                  window.localStorage.setItem('emkan.v4.master-options', JSON.stringify(dump.masterOptions));
                 }
                 if (dump.categorySectors && typeof dump.categorySectors === 'object') {
                   setCategorySectors(dump.categorySectors);
+                  window.localStorage.setItem('emkan.v4.category-sectors', JSON.stringify(dump.categorySectors));
                 }
-                if (Array.isArray(dump.bulkSmsPool)) setBulkSmsPool(dump.bulkSmsPool);
-                if (Array.isArray(dump.branches)) setBranches(dump.branches);
+                if (Array.isArray(dump.bulkSmsPool)) {
+                  setBulkSmsPool(dump.bulkSmsPool);
+                  commits.push({ storageKey: 'emkan.v4.bulk-sms-pool', value: dump.bulkSmsPool });
+                }
+                if (Array.isArray(dump.branches)) {
+                  setBranches(dump.branches);
+                  commits.push({ storageKey: 'emkan.v4.branches', value: dump.branches });
+                }
                 if (typeof dump.branch === 'string' && dump.branch.trim()) {
                   setDefaultBranch(dump.branch);
                 }
-                if (Array.isArray(dump.stockLedgerEntries)) setStockLedgerEntries(dump.stockLedgerEntries);
-                if (Array.isArray(dump.theftFraudIncidents)) setTheftFraudIncidents(dump.theftFraudIncidents);
-                if (Array.isArray(dump.glEntries)) setGlEntries(dump.glEntries);
-                if (Array.isArray(dump.journalEntries)) setJournalEntries(dump.journalEntries);
-                if (Array.isArray(dump.paymentEntries)) setPaymentEntries(dump.paymentEntries);
-                if (Array.isArray(dump.costCenters)) setCostCenters(dump.costCenters);
-                if (Array.isArray(dump.fixedAssets)) setFixedAssets(dump.fixedAssets);
-                if (Array.isArray(dump.crmLeads)) setCrmLeads(dump.crmLeads);
-                if (Array.isArray(dump.calendarEvents)) setCalendarEvents(dump.calendarEvents);
-                if (Array.isArray(dump.customerWishlist)) setCustomerWishlist(dump.customerWishlist);
-                if (Array.isArray(dump.recurringTemplates)) setRecurringTemplates(dump.recurringTemplates);
-                if (Array.isArray(dump.monthlyExpenseLedger)) setMonthlyExpenseLedger(dump.monthlyExpenseLedger);
-                if (Array.isArray(dump.promotionRules)) setPromotionRules(dump.promotionRules);
-                if (Array.isArray(dump.warehouses)) setWarehouses(dump.warehouses);
+                if (Array.isArray(dump.stockLedgerEntries)) {
+                  setStockLedgerEntries(dump.stockLedgerEntries);
+                  commits.push({ storageKey: 'emkan.v4.stock-ledger-entries', value: dump.stockLedgerEntries });
+                }
+                if (Array.isArray(dump.theftFraudIncidents)) {
+                  setTheftFraudIncidents(dump.theftFraudIncidents);
+                  commits.push({ storageKey: 'emkan.v4.theft-fraud-incidents', value: dump.theftFraudIncidents });
+                }
+                if (Array.isArray(dump.glEntries)) {
+                  setGlEntries(dump.glEntries);
+                  commits.push({ storageKey: 'emkan.v1.gl-entries', value: dump.glEntries });
+                }
+                if (Array.isArray(dump.journalEntries)) {
+                  setJournalEntries(dump.journalEntries);
+                  commits.push({ storageKey: 'emkan.v1.journal-entries', value: dump.journalEntries });
+                }
+                if (Array.isArray(dump.paymentEntries)) {
+                  setPaymentEntries(dump.paymentEntries);
+                  commits.push({ storageKey: 'emkan.v1.payment-entries', value: dump.paymentEntries });
+                }
+                if (Array.isArray(dump.costCenters)) {
+                  setCostCenters(dump.costCenters);
+                  commits.push({ storageKey: 'emkan.v4.cost-centers', value: dump.costCenters });
+                }
+                if (Array.isArray(dump.fixedAssets)) {
+                  setFixedAssets(dump.fixedAssets);
+                  commits.push({ storageKey: 'emkan.v4.fixed-assets', value: dump.fixedAssets });
+                }
+                if (Array.isArray(dump.crmLeads)) {
+                  setCrmLeads(dump.crmLeads);
+                  commits.push({ storageKey: 'emkan.v1.crm-leads', value: dump.crmLeads });
+                }
+                if (Array.isArray(dump.calendarEvents)) {
+                  setCalendarEvents(dump.calendarEvents);
+                  commits.push({ storageKey: 'emkan.v4.calendar-events', value: dump.calendarEvents });
+                }
+                if (Array.isArray(dump.customerWishlist)) {
+                  setCustomerWishlist(dump.customerWishlist);
+                  commits.push({ storageKey: 'emkan.v4.customer-wishlist', value: dump.customerWishlist });
+                }
+                if (Array.isArray(dump.recurringTemplates)) {
+                  setRecurringTemplates(dump.recurringTemplates);
+                  commits.push({ storageKey: 'emkan.v4.recurring-templates', value: dump.recurringTemplates });
+                }
+                if (Array.isArray(dump.monthlyExpenseLedger)) {
+                  setMonthlyExpenseLedger(dump.monthlyExpenseLedger);
+                  commits.push({ storageKey: 'emkan.v4.monthly-expense-ledger', value: dump.monthlyExpenseLedger });
+                }
+                if (Array.isArray(dump.promotionRules)) {
+                  setPromotionRules(dump.promotionRules);
+                  commits.push({ storageKey: 'emkan.v1.promotion-rules', value: dump.promotionRules });
+                }
+                if (Array.isArray(dump.warehouses)) {
+                  setWarehouses(dump.warehouses);
+                  commits.push({ storageKey: 'emkan.v4.warehouses', value: dump.warehouses });
+                }
+                if (commits.length > 0) {
+                  void atomicCommitMultiStores(commits);
+                }
+                setRehydrationVersion((v) => v + 1);
+                broadcastSnapshotRehydrate(`restore-${Date.now()}`);
                 showToast('بازیابی کامل اطلاعات سامانه با موفقیت انجام شد.');
                 recordAuditLog('بازیابی کامل اطلاعات', 'بازیابی اطلاعات از فایل پشتیبان JSON', 'سیستم');
               }}
